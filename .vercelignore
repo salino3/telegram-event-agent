@@ -1,0 +1,8 @@
+# Exclude local testing files and documentation from Vercel deployment
+
+src/local.ts
+instructions.md
+.clineignore
+.env
+tsconfig.json
+README.md
