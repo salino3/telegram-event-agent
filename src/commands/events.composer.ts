@@ -15,7 +15,31 @@ eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
   if (!telegramId) return;
 
   userSessions.set(telegramId, { step: "AWAITING_TITLE" });
-  await ctx.reply("📌 Please send the title for your new event:");
+
+  // 💡 Initial note added with /cancel instructions
+  await ctx.reply(
+    "📝 *Event Creation*\n" +
+      "💡 _You can send /cancel at any time to abort the process._\n\n" +
+      "📌 Please send the title for your new event:",
+    { parse_mode: "Markdown" },
+  );
+});
+
+/**
+ * Command: /cancel
+ * Aborts the current event creation wizard.
+ */
+eventsComposer.command("cancel", async (ctx: CommandContext<Context>) => {
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+
+  // Check if user has an active session in the wizard
+  if (userSessions.has(telegramId)) {
+    userSessions.delete(telegramId); // 🗑️ Clear session state from memory
+    await ctx.reply("❌ Event creation process cancelled.");
+  } else {
+    await ctx.reply("ℹ️ You have no active process to cancel.");
+  }
 });
 
 /**
