@@ -1,7 +1,8 @@
 import { CommandContext, Composer, Context, InlineKeyboard } from "grammy";
-import { query } from "../db.js";
-import { TextContext, userSessions } from "../types/session.js";
 import { CallbackQueryContext } from "grammy/web";
+import { query } from "../db.js";
+import { userSessions } from "../session/store.js";
+import { TextContextType } from "../types/session.js";
 
 export const eventsComposer = new Composer();
 
@@ -87,7 +88,7 @@ eventsComposer.callbackQuery(
 /**
  * Global Text Handler for State Machine Inputs
  */
-async function handleTextMessage(ctx: TextContext) {
+async function handleTextMessage(ctx: TextContextType) {
   const telegramId = ctx.from.id;
   const session = userSessions.get(telegramId);
   if (!session) return;

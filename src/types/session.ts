@@ -1,12 +1,9 @@
 import { Context, Filter } from "grammy";
 
-export interface UserSession {
+export interface UserSessionProps {
   step: "AWAITING_TITLE" | "AWAITING_PRIORITY" | "AWAITING_DATE";
   title?: string;
   priority?: "low" | "medium" | "high";
 }
 
-export type TextContext = Filter<Context, "message:text">;
-
-// Inicialización única de la sesión en memoria
-export const userSessions = new Map<number, UserSession>();
+export type TextContextType = Filter<Context, "message:text">;
