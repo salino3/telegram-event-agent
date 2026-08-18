@@ -4,7 +4,6 @@ import { query } from "../db.js";
 export const startComposer = new Composer();
 
 startComposer.command("start", async (ctx: CommandContext<Context>) => {
-  console.log("clog1", ctx);
   const telegramId = ctx.from?.id;
   const firstName = ctx.from?.first_name || "Anonymous";
   const lastName = ctx.from?.last_name || null;

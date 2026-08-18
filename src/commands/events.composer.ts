@@ -1,7 +1,7 @@
 import { CommandContext, Composer, Context, InlineKeyboard } from "grammy";
 import { query } from "../db.js";
-import { bot } from "../bot.js";
-import { userSessions } from "../types/session.js";
+import { TextContext, userSessions } from "../types/session.js";
+import { CallbackQueryContext } from "grammy/web";
 
 export const eventsComposer = new Composer();
 
@@ -60,34 +60,36 @@ eventsComposer.command("list_events", async (ctx: CommandContext<Context>) => {
 /**
  * Callback Query Handler: Priority Selection
  */
-eventsComposer.callbackQuery(/^priority_(low|medium|high)$/, async (ctx) => {
-  const telegramId = ctx.from.id;
-  const session = userSessions.get(telegramId);
+eventsComposer.callbackQuery(
+  /^priority_(low|medium|high)$/,
+  async (ctx: CallbackQueryContext<Context>) => {
+    const telegramId = ctx.from.id;
+    const session = userSessions.get(telegramId);
 
-  if (!session || session.step !== "AWAITING_PRIORITY") {
-    await ctx.answerCallbackQuery({
-      text: "Session expired. Type /new_event again.",
-    });
-    return;
-  }
+    if (!session || session.step !== "AWAITING_PRIORITY") {
+      await ctx.answerCallbackQuery({
+        text: "Session expired. Type /new_event again.",
+      });
+      return;
+    }
 
-  const selectedPriority = ctx.match[1] as "low" | "medium" | "high";
-  session.priority = selectedPriority;
-  session.step = "AWAITING_DATE";
+    const selectedPriority = ctx.match[1] as "low" | "medium" | "high";
+    session.priority = selectedPriority;
+    session.step = "AWAITING_DATE";
 
-  await ctx.answerCallbackQuery();
-  await ctx.editMessageText(
-    `Selected Priority: ${selectedPriority.toUpperCase()}\n\nNow enter the date and time (Format: YYYY-MM-DD HH:MM):`,
-  );
-});
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(
+      `Selected Priority: ${selectedPriority.toUpperCase()}\n\nNow enter the date and time (Format: YYYY-MM-DD HH:MM):`,
+    );
+  },
+);
 
 /**
  * Global Text Handler for State Machine Inputs
  */
-eventsComposer.on("message:text", async (ctx) => {
+async function handleTextMessage(ctx: TextContext) {
   const telegramId = ctx.from.id;
   const session = userSessions.get(telegramId);
-
   if (!session) return;
 
   if (session.step === "AWAITING_TITLE") {
@@ -146,4 +148,6 @@ eventsComposer.on("message:text", async (ctx) => {
       await ctx.reply("Failed to save event to database.");
     }
   }
-});
+}
+
+eventsComposer.on("message:text", handleTextMessage);
