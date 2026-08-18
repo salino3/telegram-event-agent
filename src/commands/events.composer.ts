@@ -162,9 +162,10 @@ async function handleTextMessage(ctx: TextContextType) {
         [creatorId, session.title, session.priority, dateObj.toISOString()],
       );
 
+      // 💡 OPCIÓN 1 APLICADA AQUÍ (Sustitución por HTML)
       await ctx.reply(
-        `✅ *Event Saved!*\n\n📌 *Title:* ${session.title}\n🚨 *Priority:* ${session.priority?.toUpperCase()}\n📅 *Date:* ${dateObj.toLocaleString()}`,
-        { parse_mode: "Markdown" },
+        `✅ <b>Event Saved!</b>\n\n📌 <b>Title:</b> ${session.title}\n🚨 <b>Priority:</b> ${session.priority?.toUpperCase()}\n📅 <b>Date:</b> ${dateObj.toLocaleString()}`,
+        { parse_mode: "HTML" },
       );
 
       userSessions.delete(telegramId);
