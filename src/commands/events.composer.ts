@@ -2,6 +2,7 @@ import { CommandContext, Composer, Context, InlineKeyboard } from "grammy";
 import { CallbackQueryContext } from "grammy/web";
 import { query } from "../db.js";
 import { userSessions } from "../session/store.js";
+import { createGoogleCalendarEvent } from "../services/google-calendar.js";
 import { utilitiesApp } from "../utils/utilities-app.js";
 import { TextContextType } from "../types/session.js";
 
