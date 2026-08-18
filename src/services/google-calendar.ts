@@ -10,18 +10,18 @@ interface EventData {
 export function generateGoogleCalendarUrl(event: EventData): string {
   const baseUrl = "https://www.google.com/calendar/render?action=TEMPLATE";
 
-  // Formato ISO UTC que requiere Google: YYYYMMDDTHHMMSSZ
+  // Format ISO UTC Google needs: YYYYMMDDTHHMMSSZ
   const formatForGoogle = (date: Date) => {
     return date.toISOString().replace(/-|:|\.\d\d\d/g, "");
   };
 
-  const duration = event.durationMinutes ?? 60; // 60 min por defecto
+  const duration = event.durationMinutes ?? 60; // 60 min for default
   const endDate = new Date(event.startDate.getTime() + duration * 60 * 1000);
 
   const startStr = formatForGoogle(event.startDate);
   const endStr = formatForGoogle(endDate);
 
-  // Detalles enriquecidos
+  // Enhanced details
   const descriptionParts = [
     event.description ? `Descripción: ${event.description}` : "",
     event.priority ? `Prioridad: ${event.priority.toUpperCase()}` : "",

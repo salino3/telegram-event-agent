@@ -173,7 +173,7 @@ async function handleTextMessage(ctx: TextContextType) {
       // 3. Generate Google Calendar Link (Sincrónico y usando 'startDate')
       const calendarUrl = generateGoogleCalendarUrl({
         title: session.title!,
-        startDate: dateObj, // Se usa startDate coincidiendo con la interfaz
+        startDate: dateObj,
         priority: session.priority,
       });
 
