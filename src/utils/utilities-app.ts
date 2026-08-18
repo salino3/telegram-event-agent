@@ -37,7 +37,7 @@ export const utilitiesApp = () => {
   }
 
   return {
-    checkRequiredFields,
     parseCustomDate,
+    checkRequiredFields,
   };
 };

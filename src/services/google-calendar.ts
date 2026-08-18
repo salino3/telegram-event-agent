@@ -1,50 +1,47 @@
-import { google } from "googleapis";
-
-// Configuration client OAuth2 or Service Account
-const auth = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI,
-);
-
-// Make sure to set the appropriate credentials/tokens before calling the API
-auth.setCredentials({
-  refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
-});
-
-const calendar = google.calendar({ version: "v3", auth });
-
-interface CreateEventParams {
+interface EventData {
   title: string;
-  startTime: Date;
-  email: string;
+  startDate: Date;
+  durationMinutes?: number;
+  description?: string;
+  priority?: "low" | "medium" | "high";
+  location?: string;
 }
 
-export async function createGoogleCalendarEvent({
-  title,
-  startTime,
-  email,
-}: CreateEventParams) {
-  // Calculate the end time (by default 1 hour later)
-  const endTime = new Date(startTime.getTime() + 60 * 60 * 1000);
+export function generateGoogleCalendarUrl(event: EventData): string {
+  const baseUrl = "https://www.google.com/calendar/render?action=TEMPLATE";
 
-  const event = {
-    summary: title,
-    start: {
-      dateTime: startTime.toISOString(),
-      timeZone: "UTC", // Or the time zone you use
-    },
-    end: {
-      dateTime: endTime.toISOString(),
-      timeZone: "UTC",
-    },
-    attendees: [{ email }],
+  // Formato ISO UTC que requiere Google: YYYYMMDDTHHMMSSZ
+  const formatForGoogle = (date: Date) => {
+    return date.toISOString().replace(/-|:|\.\d\d\d/g, "");
   };
 
-  const response = await calendar.events.insert({
-    calendarId: "primary", // Or the corresponding calendar ID
-    requestBody: event,
+  const duration = event.durationMinutes ?? 60; // 60 min por defecto
+  const endDate = new Date(event.startDate.getTime() + duration * 60 * 1000);
+
+  const startStr = formatForGoogle(event.startDate);
+  const endStr = formatForGoogle(endDate);
+
+  // Detalles enriquecidos
+  const descriptionParts = [
+    event.description ? `Descripción: ${event.description}` : "",
+    event.priority ? `Prioridad: ${event.priority.toUpperCase()}` : "",
+    `Creado vía Telegram Bot`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const titleWithPriority = event.priority
+    ? `[${event.priority.toUpperCase()}] ${event.title}`
+    : event.title;
+
+  const params = new URLSearchParams({
+    text: titleWithPriority,
+    dates: `${startStr}/${endStr}`,
+    details: descriptionParts,
+    location: event.location || "",
+    sf: "true",
+    output: "xml",
   });
 
-  return response.data; // Returns the event object with its 'id'
+  return `${baseUrl}&${params.toString()}`;
 }
