@@ -16,12 +16,11 @@ eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
 
   userSessions.set(telegramId, { step: "AWAITING_TITLE" });
 
-  // 💡 Initial note added with /cancel instructions
   await ctx.reply(
-    "📝 *Event Creation*\n" +
-      "💡 _You can send /cancel at any time to abort the process._\n\n" +
+    "📝 <b>Event Creation</b>\n" +
+      "💡 <i>You can send /cancel at any time to abort the process.</i>\n\n" +
       "📌 Please send the title for your new event:",
-    { parse_mode: "Markdown" },
+    { parse_mode: "HTML" },
   );
 });
 
@@ -65,17 +64,18 @@ eventsComposer.command("list_events", async (ctx: CommandContext<Context>) => {
       return;
     }
 
-    let message = "📅 *Your Upcoming Events:*\n\n";
+    let message = "📅 <b>Your Upcoming Events:</b>\n\n";
     const priorityEmoji = { low: "🟢", medium: "🟡", high: "🔴" };
 
     result.rows.forEach((evt, idx) => {
       const emoji =
         priorityEmoji[evt.priority as "low" | "medium" | "high"] || "⚪";
       const formattedDate = new Date(evt.start_time).toLocaleString();
-      message += `${idx + 1}. ${emoji} *${evt.title}*\n   🗓️ ${formattedDate}\n\n`;
+
+      message += `${idx + 1}. ${emoji} <b>${evt.title}</b>\n   🗓️ ${formattedDate}\n\n`;
     });
 
-    await ctx.reply(message, { parse_mode: "Markdown" });
+    await ctx.reply(message, { parse_mode: "HTML" });
   } catch (error) {
     console.error("Error fetching events:", error);
     await ctx.reply("Failed to fetch events from database.");
@@ -162,7 +162,6 @@ async function handleTextMessage(ctx: TextContextType) {
         [creatorId, session.title, session.priority, dateObj.toISOString()],
       );
 
-      // 💡 OPCIÓN 1 APLICADA AQUÍ (Sustitución por HTML)
       await ctx.reply(
         `✅ <b>Event Saved!</b>\n\n📌 <b>Title:</b> ${session.title}\n🚨 <b>Priority:</b> ${session.priority?.toUpperCase()}\n📅 <b>Date:</b> ${dateObj.toLocaleString()}`,
         { parse_mode: "HTML" },
