@@ -1,62 +1,15 @@
-import { Bot, Context, InlineKeyboard, webhookCallback } from "grammy";
-import { db } from "../src/db.js";
-import dotenv from "dotenv";
-import { CommandContext } from "grammy/web";
+import { CommandContext, Composer, Context, InlineKeyboard } from "grammy";
+import { query } from "../db.js";
+import { bot } from "../bot.js";
+import { userSessions } from "../types/session.js";
 
-dotenv.config();
-
-const token = process.env.TELEGRAM_BOT_TOKEN;
-if (!token) {
-  throw new Error("TELEGRAM_BOT_TOKEN environment variable is missing");
-}
-
-export const bot = new Bot(token);
-
-// In-memory conversation state session interface
-interface UserSession {
-  step: "AWAITING_TITLE" | "AWAITING_PRIORITY" | "AWAITING_DATE";
-  title?: string;
-  priority?: "low" | "medium" | "high";
-}
-
-const userSessions = new Map<number, UserSession>();
-
-/**
- * Command: /start
- * Registers or updates user account in Neon DB.
- */
-bot.command("start", async (ctx: CommandContext<Context>) => {
-  console.log("clog1", ctx);
-  console.log("clog2", userSessions);
-  const telegramId = ctx.from?.id;
-  const firstName = ctx.from?.first_name || "Anonymous";
-  const lastName = ctx.from?.last_name || null;
-
-  if (!telegramId) return;
-
-  try {
-    await db.query(
-      `INSERT INTO accounts (telegram_id, first_name, last_name, is_active)
-       VALUES ($1, $2, $3, TRUE)
-       ON CONFLICT (telegram_id) 
-       DO UPDATE SET first_name = $2, last_name = $3, is_active = TRUE, deleted_at = NULL;`,
-      [telegramId, firstName, lastName],
-    );
-
-    await ctx.reply(
-      `Welcome, ${firstName}! 👋\nYour account is active. Use /new_event to create an appointment or /list_events to view them.`,
-    );
-  } catch (error) {
-    console.error("Error during /start:", error);
-    await ctx.reply("Failed to initialize user session. Please try again.");
-  }
-});
+export const eventsComposer = new Composer();
 
 /**
  * Command: /new_event
  * Starts the appointment creation wizard.
  */
-bot.command("new_event", async (ctx: CommandContext<Context>) => {
+eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 
@@ -65,39 +18,15 @@ bot.command("new_event", async (ctx: CommandContext<Context>) => {
 });
 
 /**
- * Callback Query Handler: Priority Selection
- */
-bot.callbackQuery(/^priority_(low|medium|high)$/, async (ctx) => {
-  const telegramId = ctx.from.id;
-  const session = userSessions.get(telegramId);
-
-  if (!session || session.step !== "AWAITING_PRIORITY") {
-    await ctx.answerCallbackQuery({
-      text: "Session expired. Type /new_event again.",
-    });
-    return;
-  }
-
-  const selectedPriority = ctx.match[1] as "low" | "medium" | "high";
-  session.priority = selectedPriority;
-  session.step = "AWAITING_DATE";
-
-  await ctx.answerCallbackQuery();
-  await ctx.editMessageText(
-    `Selected Priority: ${selectedPriority.toUpperCase()}\n\nNow enter the date and time (Format: YYYY-MM-DD HH:MM):`,
-  );
-});
-
-/**
  * Command: /list_events
  * Queries Neon DB and lists active events.
  */
-bot.command("list_events", async (ctx) => {
+eventsComposer.command("list_events", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 
   try {
-    const result = await db.query(
+    const result = await query(
       `SELECT e.id, e.title, e.priority, e.start_time 
        FROM events e
        JOIN accounts acc ON e.creator_id = acc.id
@@ -129,9 +58,33 @@ bot.command("list_events", async (ctx) => {
 });
 
 /**
+ * Callback Query Handler: Priority Selection
+ */
+eventsComposer.callbackQuery(/^priority_(low|medium|high)$/, async (ctx) => {
+  const telegramId = ctx.from.id;
+  const session = userSessions.get(telegramId);
+
+  if (!session || session.step !== "AWAITING_PRIORITY") {
+    await ctx.answerCallbackQuery({
+      text: "Session expired. Type /new_event again.",
+    });
+    return;
+  }
+
+  const selectedPriority = ctx.match[1] as "low" | "medium" | "high";
+  session.priority = selectedPriority;
+  session.step = "AWAITING_DATE";
+
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText(
+    `Selected Priority: ${selectedPriority.toUpperCase()}\n\nNow enter the date and time (Format: YYYY-MM-DD HH:MM):`,
+  );
+});
+
+/**
  * Global Text Handler for State Machine Inputs
  */
-bot.on("message:text", async (ctx) => {
+eventsComposer.on("message:text", async (ctx) => {
   const telegramId = ctx.from.id;
   const session = userSessions.get(telegramId);
 
@@ -164,7 +117,7 @@ bot.on("message:text", async (ctx) => {
     }
 
     try {
-      const accountRes = await db.query(
+      const accountRes = await query(
         "SELECT id FROM accounts WHERE telegram_id = $1",
         [telegramId],
       );
@@ -176,7 +129,7 @@ bot.on("message:text", async (ctx) => {
 
       const creatorId = accountRes.rows[0].id;
 
-      await db.query(
+      await query(
         `INSERT INTO events (creator_id, title, priority, start_time)
          VALUES ($1, $2, $3, $4)`,
         [creatorId, session.title, session.priority, dateObj.toISOString()],
@@ -194,9 +147,3 @@ bot.on("message:text", async (ctx) => {
     }
   }
 });
-
-// Vercel Serverless Export
-export default async function handler(req: Request) {
-  const handle = webhookCallback(bot, "std/http");
-  return handle(req);
-}

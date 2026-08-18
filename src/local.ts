@@ -1,7 +1,6 @@
-// pnpm exec tsx --watch src/local.ts
-import { bot } from "../api/bot.js";
+import { bot } from "./bot.js";
 
-async function startLocal() {
+async function main() {
   // Tell Telegram to remove the active webhook so we can test locally
   await bot.api.deleteWebhook({ drop_pending_updates: true });
 
@@ -15,4 +14,4 @@ async function startLocal() {
   });
 }
 
-startLocal();
+main();

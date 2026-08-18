@@ -1,9 +1,7 @@
-import { Pool } from "@neondatabase/serverless";
-import dotenv from "dotenv";
+import { Pool, QueryResult } from "@neondatabase/serverless";
+import { DATABASE_URL } from "./constants.js";
 
-dotenv.config();
-
-if (!process.env.DATABASE_URL) {
+if (!DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is missing");
 }
 
@@ -11,3 +9,7 @@ if (!process.env.DATABASE_URL) {
 export const db = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
+
+export function query(text: string, params?: any[]): Promise<QueryResult<any>> {
+  return db.query(text, params);
+}
