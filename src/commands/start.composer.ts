@@ -19,16 +19,17 @@ startComposer.command("start", async (ctx: CommandContext<Context>) => {
       [telegramId, firstName, lastName],
     );
 
+    // Reemplazamos etiquetas de Markdown (* y _) por etiquetas HTML (<b>, <i>)
     const welcomeMessage =
-      `👋 *Welcome to Event Manager Bot, ${firstName}!*\n\n` +
+      `👋 <b>Welcome to Event Manager Bot, ${firstName}!</b>\n\n` +
       `Your account is active. I can help you manage your personal events and appointments easily.\n\n` +
-      `📌 *Available Commands:*\n` +
+      `📌 <b>Available Commands:</b>\n` +
       `• /new_event - Create a new event or appointment\n` +
       `• /list_events - View all your scheduled events\n` +
       `• /cancel - Cancel the current active process\n\n` +
-      `💡 _Tip: You can also tap the_ *[/]* _button next to the chat bar to open the commands menu at any time._`;
+      `💡 <i>Tip: You can also tap the</i> <b>[/]</b> <i>button next to the chat bar to open the commands menu at any time.</i>`;
 
-    await ctx.reply(welcomeMessage, { parse_mode: "Markdown" });
+    await ctx.reply(welcomeMessage, { parse_mode: "HTML" });
   } catch (error) {
     console.error("Error during /start:", error);
     await ctx.reply("Failed to initialize user session. Please try again.");
