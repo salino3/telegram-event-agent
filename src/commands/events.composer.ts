@@ -2,13 +2,16 @@ import { CommandContext, Composer, Context, InlineKeyboard } from "grammy";
 import { CallbackQueryContext } from "grammy/web";
 import { query } from "../db.js";
 import { userSessions } from "../session/store.js";
+import { utilitiesApp } from "../utils/utilities-app.js";
 import { TextContextType } from "../types/session.js";
 
 export const eventsComposer = new Composer();
 
+const { parseCustomDate } = utilitiesApp();
+
 /**
  * Command: /new_event
- * Starts the appointment creation wizard.
+ * Starts the appointment creation wizasrd.
  */
 eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
@@ -104,7 +107,7 @@ eventsComposer.callbackQuery(
 
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(
-      `Selected Priority: ${selectedPriority.toUpperCase()}\n\nNow enter the date and time (Format: YYYY-MM-DD HH:MM):`,
+      `Selected Priority: ${selectedPriority.toUpperCase()}\n\nNow enter the date and time (Format: DD-MM-YYYY HH:MM):`,
     );
   },
 );
@@ -134,20 +137,23 @@ async function handleTextMessage(ctx: TextContextType) {
 
   if (session.step === "AWAITING_DATE") {
     const inputDate = ctx.message.text;
-    const dateObj = new Date(inputDate);
+    const dateObj = parseCustomDate(inputDate);
 
-    if (isNaN(dateObj.getTime())) {
+    // Validate DD-MM-YYYY HH:MM format
+    if (!dateObj) {
       await ctx.reply(
-        "❌ Invalid date format. Please use YYYY-MM-DD HH:MM (e.g., 2026-08-20 15:00):",
+        "❌ Invalid date format. Please use DD-MM-YYYY HH:MM (e.g., 20-08-2026 15:00):",
       );
       return;
     }
 
     try {
+      // 1. Fetch user 'id' and 'email'
       const accountRes = await query(
-        "SELECT id FROM accounts WHERE telegram_id = $1",
+        "SELECT id, email FROM accounts WHERE telegram_id = $1",
         [telegramId],
       );
+
       if (accountRes.rows.length === 0) {
         await ctx.reply("Account not found. Please run /start first.");
         userSessions.delete(telegramId);
@@ -155,15 +161,56 @@ async function handleTextMessage(ctx: TextContextType) {
       }
 
       const creatorId = accountRes.rows[0].id;
+      const userEmail = accountRes.rows[0].email;
 
+      let googleEventId: string | null = null;
+      let syncStatusMessage = "";
+
+      // 2. Try to sync with Google Calendar (only if user email exists)
+      if (userEmail) {
+        try {
+          const googleResponse = await createGoogleCalendarEvent({
+            title: session.title!,
+            startTime: dateObj,
+            email: userEmail,
+          });
+
+          if (googleResponse?.id) {
+            googleEventId = googleResponse.id;
+            syncStatusMessage =
+              "📅 <b>Google Calendar:</b> Synced successfully! ✅";
+          } else {
+            syncStatusMessage = "📅 <b>Google Calendar:</b> Sync failed ⚠️";
+          }
+        } catch (gError) {
+          console.error("Error syncing with Google Calendar:", gError);
+          syncStatusMessage = "📅 <b>Google Calendar:</b> Sync error ⚠️";
+        }
+      } else {
+        syncStatusMessage =
+          "📅 <b>Google Calendar:</b> Not synced (No email registered) ⚠️";
+      }
+
+      // 3. Save event to PostgreSQL database
       await query(
-        `INSERT INTO events (creator_id, title, priority, start_time)
-         VALUES ($1, $2, $3, $4)`,
-        [creatorId, session.title, session.priority, dateObj.toISOString()],
+        `INSERT INTO events (creator_id, title, priority, start_time, google_event_id)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          creatorId,
+          session.title,
+          session.priority,
+          dateObj.toISOString(),
+          googleEventId,
+        ],
       );
 
+      // 4. Send response message with event details and sync status
       await ctx.reply(
-        `✅ <b>Event Saved!</b>\n\n📌 <b>Title:</b> ${session.title}\n🚨 <b>Priority:</b> ${session.priority?.toUpperCase()}\n📅 <b>Date:</b> ${dateObj.toLocaleString()}`,
+        `✅ <b>Event Saved!</b>\n\n` +
+          `📌 <b>Title:</b> ${session.title}\n` +
+          `🚨 <b>Priority:</b> ${session.priority?.toUpperCase()}\n` +
+          `📆 <b>Date:</b> ${inputDate}\n` +
+          `${syncStatusMessage}`,
         { parse_mode: "HTML" },
       );
 
