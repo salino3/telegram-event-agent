@@ -19,9 +19,17 @@ startComposer.command("start", async (ctx: CommandContext<Context>) => {
       [telegramId, firstName, lastName],
     );
 
-    await ctx.reply(
-      `Welcome, ${firstName}! 👋\nYour account is active. Use /new_event to create an appointment or /list_events to view them.`,
-    );
+    // Reemplazamos etiquetas de Markdown (* y _) por etiquetas HTML (<b>, <i>)
+    const welcomeMessage =
+      `👋 <b>Welcome to Event Manager Bot, ${firstName}!</b>\n\n` +
+      `Your account is active. I can help you manage your personal events and appointments easily.\n\n` +
+      `📌 <b>Available Commands:</b>\n` +
+      `• /new_event - Create a new event or appointment\n` +
+      `• /list_events - View all your scheduled events\n` +
+      `• /cancel - Cancel the current active process\n\n` +
+      `💡 <i>Tip: You can also tap the</i> <b>[/]</b> <i>button next to the chat bar to open the commands menu at any time.</i>`;
+
+    await ctx.reply(welcomeMessage, { parse_mode: "HTML" });
   } catch (error) {
     console.error("Error during /start:", error);
     await ctx.reply("Failed to initialize user session. Please try again.");
