@@ -11,20 +11,20 @@ export const oauth2Client = new google.auth.OAuth2(
   GOOGLE_REDIRECT_URI,
 );
 
-// Permisos que solicitaremos al usuario (crear/modificar eventos en su calendario)
+// Permissions we will request from the user (create/modify events in their calendar)
 const SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 
 /**
- * Genera la URL de autorización vinculada al ID de Telegram del usuario.
+ * Generates the authorization URL linked to the user's Telegram ID.
  */
 export function getAuthUrl(telegramId: number): string {
   return oauth2Client.generateAuthUrl({
-    access_type: "offline", // REQUERIDO para obtener el refresh_token
-    prompt: "consent", // Fuerza la entrega del refresh_token siempre
+    access_type: "offline", // REQUIRED to obtain the refresh_token
+    prompt: "consent", // Force the delivery of the refresh_token every time
     scope: SCOPES,
-    state: telegramId.toString(), // Pasamos el telegramId para saber qué usuario se está conectando
+    state: telegramId.toString(), // Pass the Telegram ID to find out which user is connecting
   });
 }
