@@ -15,10 +15,12 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "googleapis": "^175.0.0",
     "grammy": "^1.45.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^26.2.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",

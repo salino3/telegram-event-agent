@@ -25,6 +25,7 @@ startComposer.command("start", async (ctx: CommandContext<Context>) => {
       `Your account is active. I can help you manage your personal events and appointments easily.\n\n` +
       `📌 <b>Available Commands:</b>\n` +
       `• /new_event - Create a new event or appointment\n` +
+      `• /connect_google - Connect your Google Calendar account\n` +
       `• /list_events - View all your scheduled events\n` +
       `• /cancel - Cancel the current active process\n\n` +
       `💡 <i>Tip: You can also tap the</i> <b>[/]</b> <i>button next to the chat bar to open the commands menu at any time.</i>`;
