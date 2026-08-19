@@ -2,7 +2,7 @@ import { CommandContext, Composer, Context, InlineKeyboard } from "grammy";
 import { CallbackQueryContext } from "grammy/web";
 import { query } from "../db.js";
 import { userSessions } from "../session/store.js";
-import { generateGoogleCalendarUrl } from "../services/google-calendar.js";
+import { createGoogleCalendarEvent } from "../services/google-calendar.js";
 import { utilitiesApp } from "../utils/utilities-app.js";
 import { TextContextType } from "../types/session.js";
 
@@ -163,37 +163,44 @@ async function handleTextMessage(ctx: TextContextType) {
 
       const creatorId = accountRes.rows[0].id;
 
-      // 2. Save event to PostgreSQL database
-      await query(
-        `INSERT INTO events (creator_id, title, priority, start_time)
-         VALUES ($1, $2, $3, $4)`,
-        [creatorId, session.title, session.priority, dateObj.toISOString()],
-      );
-
-      // 3. Generate Google Calendar Link (Sincrónico y usando 'startDate')
-      const calendarUrl = generateGoogleCalendarUrl({
+      // 2. Create Event in Google Calendar via API
+      const googleEventId = await createGoogleCalendarEvent({
+        telegramId,
         title: session.title!,
-        startDate: dateObj,
-        priority: session.priority,
+        startTime: dateObj,
       });
 
-      // 4. Create Inline Keyboard with URL button
-      const keyboard = new InlineKeyboard().url(
-        "📅 Add to Google Calendar",
-        calendarUrl,
+      const priorityValue = (session.priority || "medium").toLowerCase();
+
+      // 3. Save event to PostgreSQL database with google_event_id
+      await query(
+        `INSERT INTO events (creator_id, title, priority, start_time, google_event_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+        [
+          creatorId,
+          session.title,
+          priorityValue,
+          dateObj.toISOString(),
+          googleEventId,
+        ],
       );
 
-      // 5. Send response message with event details and button
+      // 4. Send response message based on sync status
+      const syncStatusMessage = googleEventId
+        ? "🗓️ <b>Synced automatically with your Google Calendar!</b>"
+        : "⚠️ Saved in database, but could not sync with Google Calendar. Connect your account using /connect_google.";
+
+      const safeTitle = session.title
+        ? session.title.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        : "";
+
       await ctx.reply(
         `✅ <b>Event Saved!</b>\n\n` +
-          `📌 <b>Title:</b> ${session.title}\n` +
-          `🚨 <b>Priority:</b> ${session.priority?.toUpperCase()}\n` +
+          `📌 <b>Title:</b> ${safeTitle}\n` +
+          `🚨 <b>Priority:</b> ${priorityValue.toUpperCase()}\n` +
           `📆 <b>Date:</b> ${inputDate}\n\n` +
-          `Click below to sync with your personal Google Calendar:`,
-        {
-          parse_mode: "HTML",
-          reply_markup: keyboard,
-        },
+          `${syncStatusMessage}`,
+        { parse_mode: "HTML" },
       );
 
       userSessions.delete(telegramId);
