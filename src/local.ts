@@ -8,20 +8,20 @@ import { PORT } from "./constants.js";
 const app = express();
 
 app.get("/auth/google/callback", async (req, res) => {
-  const { code, state } = req.query;
-
-  if (!code || !state) {
-    return res.status(400).send("Missing required parameters (code or state).");
-  }
-
-  const telegramId = parseInt(state as string, 10);
-
   try {
-    // Exchange authorization code for tokens
+    const { code, state } = req.query;
+    console.log("clog5", code, state);
+    if (!code || !state) {
+      return res.status(400).send("Missing code or state parameter.");
+    }
+
+    const telegramId = String(state); // Coincide con la string plana del state
+
+    // 1. Obtener tokens de Google
     const { tokens } = await oauth2Client.getToken(code as string);
     oauth2Client.setCredentials(tokens);
 
-    // Fetch user profile email
+    // 2. Obtener información del usuario (Email)
     const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
     const userInfo = await oauth2.userinfo.get();
     const userEmail = userInfo.data.email;
@@ -30,19 +30,27 @@ app.get("/auth/google/callback", async (req, res) => {
       throw new Error("Could not retrieve email from Google.");
     }
 
-    // Find account ID by Telegram ID
-    const accountRes = await query(
+    // 3. Buscar o crear cuenta de usuario
+    let accountRes = await query(
       "SELECT id FROM accounts WHERE telegram_id = $1",
       [telegramId],
     );
 
+    let accountId: number;
+
     if (accountRes.rows.length === 0) {
-      return res.status(404).send("Telegram user not found.");
+      const newAccountRes = await query(
+        `INSERT INTO accounts (telegram_id, first_name)
+         VALUES ($1, $2)
+         RETURNING id`,
+        [telegramId, "Telegram User"],
+      );
+      accountId = newAccountRes.rows[0].id;
+    } else {
+      accountId = accountRes.rows[0].id;
     }
 
-    const accountId = accountRes.rows[0].id;
-
-    // Save or update Google credentials in DB
+    // 4. Guardar o actualizar credenciales en DB (google_accounts)
     await query(
       `INSERT INTO google_accounts (account_id, email, access_token, refresh_token, is_default)
        VALUES ($1, $2, $3, $4, TRUE)
@@ -54,21 +62,18 @@ app.get("/auth/google/callback", async (req, res) => {
       [accountId, userEmail, tokens.access_token, tokens.refresh_token],
     );
 
-    // Notify user via Telegram
+    // 5. Notificar al usuario por Telegram
     await bot.api.sendMessage(
       telegramId,
       `✅ <b>Account linked successfully!</b>\n\n` +
-        `Email: <code>${userEmail}</code>\n\n` +
-        `Your events will now be automatically synced with your Google Calendar.`,
+        `Email: <code>${userEmail}</code>`,
       { parse_mode: "HTML" },
     );
 
-    res.send(
-      "<h1>Authentication completed! You can close this window and return to Telegram.</h1>",
-    );
+    res.send("<h1>Authentication successful! You can return to Telegram.</h1>");
   } catch (error) {
-    console.error("Error during Google OAuth callback:", error);
-    res.status(500).send("Authentication with Google failed.");
+    console.error("Error in OAuth callback:", error);
+    res.status(500).send("Authentication failed. Please try again.");
   }
 });
 

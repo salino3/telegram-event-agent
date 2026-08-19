@@ -7,6 +7,7 @@ googleAuthComposer.command(
   "connect_google",
   async (ctx: CommandContext<Context>) => {
     const telegramId = ctx.from?.id;
+    console.log("clog3", ctx.from?.id);
 
     if (!telegramId) {
       return ctx.reply("❌ Your Telegram user could not be identified.");
@@ -14,12 +15,12 @@ googleAuthComposer.command(
 
     // Generate the custom auth URL with the user's Telegram ID as state
     const authUrl = getAuthUrl(telegramId);
-
+    console.log("clog2", authUrl);
     const keyboard = new InlineKeyboard().url(
       "🔗 Connect Google Calendar",
       authUrl,
     );
-
+    console.log("clog4", keyboard);
     await ctx.reply(
       "<b>Google Calendar Integration</b>\n\n" +
         "To sync and manage events directly in your calendar, authorization is required.\n\n" +
