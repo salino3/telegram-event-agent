@@ -10,7 +10,7 @@ const app = express();
 app.get("/auth/google/callback", async (req, res) => {
   try {
     const { code, state } = req.query;
-    console.log("clog5", code, state);
+
     if (!code || !state) {
       return res.status(400).send("Missing code or state parameter.");
     }

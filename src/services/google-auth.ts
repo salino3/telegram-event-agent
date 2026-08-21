@@ -18,8 +18,6 @@ export const oauth2Client = new google.auth.OAuth2(
  * @returns The generated authorization URL
  */
 export function getAuthUrl(telegramId: number): string {
-  console.log("clog", telegramId.toString());
-
   const scopes = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/userinfo.email",
