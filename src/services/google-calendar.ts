@@ -6,6 +6,7 @@ export interface CreateEventInput {
   telegramId: number;
   title: string;
   description?: string;
+  colorId?: string;
   location?: string;
   startTime: Date;
   endTime: Date;
@@ -43,6 +44,7 @@ export async function createGoogleCalendarEvent(
         summary: input.title,
         description: input.description,
         location: input.location,
+        colorId: input.colorId,
         start: {
           dateTime: input.startTime.toISOString(),
         },

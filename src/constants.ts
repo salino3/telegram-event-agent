@@ -10,3 +10,18 @@ export const {
   GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI,
 } = process.env;
+
+//
+export const GOOGLE_CALENDAR_COLORS = {
+  "1": { name: "Lavender", emoji: "🟣" },
+  "2": { name: "Sage", emoji: "🟢" },
+  "3": { name: "Grape", emoji: "🍇" },
+  "4": { name: "Flamingo", emoji: "🌸" },
+  "5": { name: "Banana", emoji: "🟡" },
+  "6": { name: "Tangerine", emoji: "🟠" },
+  "7": { name: "Peacock", emoji: "🦚" },
+  "8": { name: "Graphite", emoji: "🔘" },
+  "9": { name: "Blueberry", emoji: "🔵" },
+  "10": { name: "Basil", emoji: "🌿" },
+  "11": { name: "Tomato", emoji: "🔴" },
+} as const;

@@ -1,3 +1,6 @@
+import { InlineKeyboard } from "grammy";
+import { GOOGLE_CALENDAR_COLORS } from "../constants.js";
+
 export const utilitiesApp = () => {
   //
   const checkRequiredFields = <T extends Record<string, any>>(data: T) =>
@@ -36,8 +39,34 @@ export const utilitiesApp = () => {
     return isNaN(dateObj.getTime()) ? null : dateObj;
   }
 
+  //
+  function buildColorKeyboard(): InlineKeyboard {
+    const keyboard = new InlineKeyboard();
+    let count = 0;
+
+    for (const [id, color] of Object.entries(GOOGLE_CALENDAR_COLORS)) {
+      keyboard.text(`${color.emoji} ${color.name}`, `color_${id}`);
+      count++;
+      if (count % 3 === 0) keyboard.row(); // 3 buttons per row
+    }
+
+    keyboard.row().text("➡️ Skip", "skip_color");
+    return keyboard;
+  }
+
+  // Helper to safely escape HTML in Telegram
+  function escapeHtml(text?: string): string {
+    if (!text) return "N/A";
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
   return {
     parseCustomDate,
     checkRequiredFields,
+    buildColorKeyboard,
+    escapeHtml,
   };
 };

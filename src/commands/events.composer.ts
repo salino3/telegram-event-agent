@@ -8,11 +8,51 @@ import { PriorityType, TextContextType, WizardStep } from "../types/session.js";
 
 export const eventsComposer = new Composer();
 
-const { parseCustomDate } = utilitiesApp();
+const { parseCustomDate, buildColorKeyboard, escapeHtml } = utilitiesApp();
+
+/**
+ * Helper to proceed past location and determine whether to present
+ * the color selection step (if connected to Google Calendar) or skip to priority.
+ */
+async function proceedAfterLocation(
+  ctx: Context,
+  telegramId: number,
+  session: any,
+) {
+  const googleRes = await query(
+    `SELECT ga.id FROM google_accounts ga 
+     JOIN accounts a ON ga.account_id = a.id 
+     WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
+    [String(telegramId)],
+  );
+
+  const hasGoogleAccount = googleRes.rows.length > 0;
+
+  if (hasGoogleAccount) {
+    session.step = WizardStep.AWAITING_COLOR;
+    await ctx.reply(
+      "🎨 Choose a <b>Google Calendar color</b> for this event:",
+      {
+        parse_mode: "HTML",
+        reply_markup: buildColorKeyboard(),
+      },
+    );
+  } else {
+    session.step = WizardStep.AWAITING_PRIORITY;
+    const priorityKeyboard = new InlineKeyboard()
+      .text("🟢 Low", "priority_low")
+      .text("🟡 Medium", "priority_medium")
+      .text("🔴 High", "priority_high");
+
+    await ctx.reply("🚨 Select the <b>priority level</b>:", {
+      parse_mode: "HTML",
+      reply_markup: priorityKeyboard,
+    });
+  }
+}
 
 /**
  * Command: /new_event
- * Starts the appointment creation wizasrd.
  */
 eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
@@ -30,7 +70,6 @@ eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
 
 /**
  * Command: /cancel
- * Aborts the current event creation wizard.
  */
 eventsComposer.command("cancel", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
@@ -43,6 +82,52 @@ eventsComposer.command("cancel", async (ctx: CommandContext<Context>) => {
   } else {
     await ctx.reply("ℹ️ You have no active process to cancel.");
   }
+});
+
+/**
+ * Callback: Color Selection
+ */
+eventsComposer.callbackQuery(/^color_(\d+)$/, async (ctx) => {
+  const telegramId = ctx.from.id;
+  const session = userSessions.get(telegramId);
+  if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
+
+  session.colorId = ctx.match[1];
+  session.step = WizardStep.AWAITING_PRIORITY;
+
+  await ctx.answerCallbackQuery();
+  const priorityKeyboard = new InlineKeyboard()
+    .text("🟢 Low", "priority_low")
+    .text("🟡 Medium", "priority_medium")
+    .text("🔴 High", "priority_high");
+
+  await ctx.reply("🚨 Select the <b>priority level</b>:", {
+    parse_mode: "HTML",
+    reply_markup: priorityKeyboard,
+  });
+});
+
+/**
+ * Callback: Skip Color Selection
+ */
+eventsComposer.callbackQuery("skip_color", async (ctx) => {
+  const telegramId = ctx.from.id;
+  const session = userSessions.get(telegramId);
+  if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
+
+  session.colorId = undefined;
+  session.step = WizardStep.AWAITING_PRIORITY;
+
+  await ctx.answerCallbackQuery();
+  const priorityKeyboard = new InlineKeyboard()
+    .text("🟢 Low", "priority_low")
+    .text("🟡 Medium", "priority_medium")
+    .text("🔴 High", "priority_high");
+
+  await ctx.reply("🚨 Select the <b>priority level</b>:", {
+    parse_mode: "HTML",
+    reply_markup: priorityKeyboard,
+  });
 });
 
 /**
@@ -80,17 +165,7 @@ eventsComposer.callbackQuery(
 
     if (session.step === WizardStep.AWAITING_LOCATION) {
       session.location = undefined;
-      session.step = WizardStep.AWAITING_PRIORITY;
-
-      const priorityKeyboard = new InlineKeyboard()
-        .text("🟢 Low", "priority_low")
-        .text("🟡 Medium", "priority_medium")
-        .text("🔴 High", "priority_high");
-
-      await ctx.reply("🚨 Select the <b>priority level</b>:", {
-        parse_mode: "HTML",
-        reply_markup: priorityKeyboard,
-      });
+      await proceedAfterLocation(ctx, telegramId, session);
       return;
     }
   },
@@ -98,7 +173,7 @@ eventsComposer.callbackQuery(
 
 /**
  * Command: /list_events
- * Queries Neon DB and lists active events.
+ * Queries DB and lists active events.
  */
 eventsComposer.command("list_events", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
@@ -206,17 +281,7 @@ async function handleTextMessage(ctx: TextContextType) {
 
   if (session.step === WizardStep.AWAITING_LOCATION) {
     session.location = ctx.message.text;
-    session.step = WizardStep.AWAITING_PRIORITY;
-
-    const priorityKeyboard = new InlineKeyboard()
-      .text("🟢 Low", "priority_low")
-      .text("🟡 Medium", "priority_medium")
-      .text("🔴 High", "priority_high");
-
-    await ctx.reply("🚨 Select the <b>priority level</b>:", {
-      parse_mode: "HTML",
-      reply_markup: priorityKeyboard,
-    });
+    await proceedAfterLocation(ctx, telegramId, session);
     return;
   }
 
@@ -267,11 +332,13 @@ async function handleTextMessage(ctx: TextContextType) {
       }
       const creatorId = accountRes.rows[0].id;
 
+      // UPDATED: Now passing colorId to Google Calendar Service
       const googleEventId = await createGoogleCalendarEvent({
         telegramId,
         title: session.title!,
         description: session.description,
         location: session.location,
+        colorId: session.colorId,
         startTime,
         endTime,
       });
@@ -303,9 +370,10 @@ async function handleTextMessage(ctx: TextContextType) {
 
       await ctx.reply(
         `✅ <b>Event Saved!</b>\n\n` +
-          `📌 <b>Title:</b> ${safeTitle}\n` +
-          `📄 <b>Description:</b> ${session.description || "N/A"}\n` +
-          `📍 <b>Location:</b> ${session.location || "N/A"}\n` +
+          `📌 <b>Title:</b> ${escapeHtml(session.title)}\n` +
+          `📄 <b>Description:</b> ${escapeHtml(session.description)}\n` +
+          `📍 <b>Location:</b> ${escapeHtml(session.location)}\n` +
+          `🎨 <b>Color ID:</b> ${session.colorId || "Default"}\n` +
           `🚨 <b>Priority:</b> ${priorityValue.toUpperCase()}\n` +
           `📆 <b>Start Time:</b> ${startTime.toLocaleString()}\n` +
           `⏳ <b>Duration:</b> ${durationInput} min\n\n` +
