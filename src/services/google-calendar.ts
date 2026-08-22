@@ -18,7 +18,7 @@ export async function createGoogleCalendarEvent(
 ): Promise<{ id: string | null; htmlLink: string | null }> {
   try {
     const dbRes = await query(
-      `SELECT ga.access_token, ga.refresh_token 
+      `SELECT ga.access_token, ga.refresh_token, ga.email 
        FROM google_accounts ga
        JOIN accounts a ON ga.account_id = a.id
        WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
@@ -29,7 +29,7 @@ export async function createGoogleCalendarEvent(
       return { id: null, htmlLink: null };
     }
 
-    const { access_token, refresh_token } = dbRes.rows[0];
+    const { access_token, refresh_token, email } = dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
@@ -38,7 +38,7 @@ export async function createGoogleCalendarEvent(
     const fullDescription =
       `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
 
-    // 2. Insert event to Google Calendar
+    // Insert event in Google Calendar
     const response = await calendar.events.insert({
       calendarId: "primary",
       requestBody: {
@@ -51,9 +51,15 @@ export async function createGoogleCalendarEvent(
       },
     });
 
+    // Modify the URL by adding 'authuser' so that it opens the correct account.
+    const rawLink = response.data.htmlLink || null;
+    const directLink = rawLink
+      ? `${rawLink}&authuser=${encodeURIComponent(email)}`
+      : null;
+
     return {
       id: response.data.id || null,
-      htmlLink: response.data.htmlLink || null,
+      htmlLink: directLink,
     };
   } catch (error) {
     console.error("Error creating Google Calendar event:", error);
