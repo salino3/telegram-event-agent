@@ -17,6 +17,7 @@ export interface UserSessionProps {
   description?: string;
   location?: string;
   priority?: PriorityType;
+  startDate?: Date;
   durationMinutes?: number;
 }
 
