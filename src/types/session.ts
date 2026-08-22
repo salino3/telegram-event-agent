@@ -1,12 +1,13 @@
 import { Context, Filter } from "grammy";
 
-export type WizardStep =
-  | "AWAITING_TITLE"
-  | "AWAITING_DESCRIPTION"
-  | "AWAITING_LOCATION"
-  | "AWAITING_PRIORITY"
-  | "AWAITING_DATE"
-  | "AWAITING_DURATION";
+export enum WizardStep {
+  AWAITING_TITLE = "AWAITING_TITLE",
+  AWAITING_DESCRIPTION = "AWAITING_DESCRIPTION",
+  AWAITING_LOCATION = "AWAITING_LOCATION",
+  AWAITING_PRIORITY = "AWAITING_PRIORITY",
+  AWAITING_DATE = "AWAITING_DATE",
+  AWAITING_DURATION = "AWAITING_DURATION",
+}
 
 export type PriorityType = "low" | "medium" | "high";
 

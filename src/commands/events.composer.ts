@@ -4,7 +4,7 @@ import { query } from "../db.js";
 import { userSessions } from "../session/store.js";
 import { createGoogleCalendarEvent } from "../services/google-calendar.js";
 import { utilitiesApp } from "../utils/utilities-app.js";
-import { TextContextType } from "../types/session.js";
+import { TextContextType, WizardStep } from "../types/session.js";
 
 export const eventsComposer = new Composer();
 
@@ -18,7 +18,7 @@ eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 
-  userSessions.set(telegramId, { step: "AWAITING_TITLE" });
+  userSessions.set(telegramId, { step: WizardStep.AWAITING_TITLE });
 
   await ctx.reply(
     "📝 <b>Event Creation</b>\n" +
@@ -95,7 +95,7 @@ eventsComposer.callbackQuery(
     const telegramId = ctx.from.id;
     const session = userSessions.get(telegramId);
 
-    if (!session || session.step !== "AWAITING_PRIORITY") {
+    if (!session || session.step !== WizardStep.AWAITING_PRIORITY) {
       await ctx.answerCallbackQuery({
         text: "Session expired. Type /new_event again.",
       });
@@ -104,7 +104,7 @@ eventsComposer.callbackQuery(
 
     const selectedPriority = ctx.match[1] as "low" | "medium" | "high";
     session.priority = selectedPriority;
-    session.step = "AWAITING_DATE";
+    session.step = WizardStep.AWAITING_DATE;
 
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(
@@ -121,9 +121,9 @@ async function handleTextMessage(ctx: TextContextType) {
   const session = userSessions.get(telegramId);
   if (!session) return;
 
-  if (session.step === "AWAITING_TITLE") {
+  if (session.step === WizardStep.AWAITING_TITLE) {
     session.title = ctx.message.text;
-    session.step = "AWAITING_PRIORITY";
+    session.step = WizardStep.AWAITING_PRIORITY;
 
     const priorityKeyboard = new InlineKeyboard()
       .text("🟢 Low", "priority_low")
@@ -136,7 +136,7 @@ async function handleTextMessage(ctx: TextContextType) {
     return;
   }
 
-  if (session.step === "AWAITING_DATE") {
+  if (session.step === WizardStep.AWAITING_DATE) {
     const inputDate = ctx.message.text;
     const dateObj = parseCustomDate(inputDate);
 
