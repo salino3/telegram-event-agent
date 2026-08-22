@@ -11,7 +11,7 @@ export type WizardStep =
 export type PriorityType = "low" | "medium" | "high";
 
 export interface UserSessionProps {
-  step: "AWAITING_TITLE" | "AWAITING_PRIORITY" | "AWAITING_DATE";
+  step: WizardStep;
   title?: string;
   description?: string;
   location?: string;
