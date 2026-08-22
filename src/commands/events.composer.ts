@@ -9,7 +9,8 @@ import { PriorityType, TextContextType, WizardStep } from "../types/session.js";
 
 export const eventsComposer = new Composer();
 
-const { parseCustomDate, buildColorKeyboard, escapeHtml } = utilitiesApp();
+const { parseCustomDate, buildColorKeyboard, escapeHtml, getExampleDate } =
+  utilitiesApp();
 
 /**
  * Helper to proceed past location and determine whether to present
@@ -292,7 +293,10 @@ async function handleTextMessage(ctx: TextContextType) {
 
     if (!dateObj) {
       await ctx.reply(
-        "❌ Invalid date format. Please use DD-MM-YYYY HH:MM (e.g., 20-08-2026 15:00):",
+        `❌ Invalid date format.\n\n` +
+          `You typed: <code>${escapeHtml(inputDate)}</code>\n\n` +
+          `Please re-send using the format <b>DD-MM-YYYY HH:MM</b> (e.g., ${getExampleDate()} 15:00):`,
+        { parse_mode: "HTML" },
       );
       return;
     }

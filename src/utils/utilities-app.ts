@@ -63,10 +63,25 @@ export const utilitiesApp = () => {
       .replace(/>/g, "&gt;");
   }
 
+  //
+  function getExampleDate(): string {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const day = String(tomorrow.getDate()).padStart(2, "0");
+    const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
+    const year = tomorrow.getFullYear();
+    // const hours = String(tomorrow.getHours()).padStart(2, "0");
+    // const minutes = "00";
+
+    return `${day}-${month}-${year}`;
+  }
+
   return {
     parseCustomDate,
     checkRequiredFields,
     buildColorKeyboard,
     escapeHtml,
+    getExampleDate,
   };
 };
