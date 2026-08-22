@@ -11,6 +11,12 @@ export const {
   GOOGLE_REDIRECT_URI,
 } = process.env;
 
+export const PRIORITY_EMOJIS: Record<string, string> = {
+  low: "🟢",
+  medium: "🟡",
+  high: "🔴",
+};
+
 //
 export const GOOGLE_CALENDAR_COLORS = {
   "1": { name: "Lavender", emoji: "🟣" },

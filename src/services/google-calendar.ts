@@ -6,6 +6,7 @@ export interface CreateEventInput {
   telegramId: number;
   title: string;
   description?: string;
+  priority?: string;
   colorId?: string;
   location?: string;
   startTime: Date;
@@ -14,9 +15,8 @@ export interface CreateEventInput {
 
 export async function createGoogleCalendarEvent(
   input: CreateEventInput,
-): Promise<string | null> {
+): Promise<{ id: string | null; htmlLink: string | null }> {
   try {
-    // 1. Get Google Account credentials for this Telegram user
     const dbRes = await query(
       `SELECT ga.access_token, ga.refresh_token 
        FROM google_accounts ga
@@ -26,37 +26,37 @@ export async function createGoogleCalendarEvent(
     );
 
     if (dbRes.rows.length === 0) {
-      return null; // User has not linked Google Calendar
+      return { id: null, htmlLink: null };
     }
 
     const { access_token, refresh_token } = dbRes.rows[0];
-    oauth2Client.setCredentials({
-      access_token,
-      refresh_token,
-    });
+    oauth2Client.setCredentials({ access_token, refresh_token });
 
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+
+    const priorityLabel = (input.priority || "medium").toUpperCase();
+    const fullDescription =
+      `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
 
     // 2. Insert event to Google Calendar
     const response = await calendar.events.insert({
       calendarId: "primary",
       requestBody: {
         summary: input.title,
-        description: input.description,
+        description: fullDescription,
         location: input.location,
         colorId: input.colorId,
-        start: {
-          dateTime: input.startTime.toISOString(),
-        },
-        end: {
-          dateTime: input.endTime.toISOString(),
-        },
+        start: { dateTime: input.startTime.toISOString() },
+        end: { dateTime: input.endTime.toISOString() },
       },
     });
 
-    return response.data.id || null;
+    return {
+      id: response.data.id || null,
+      htmlLink: response.data.htmlLink || null,
+    };
   } catch (error) {
     console.error("Error creating Google Calendar event:", error);
-    return null;
+    return { id: null, htmlLink: null };
   }
 }

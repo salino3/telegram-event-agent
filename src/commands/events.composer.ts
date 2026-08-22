@@ -4,6 +4,7 @@ import { query } from "../db.js";
 import { userSessions } from "../session/store.js";
 import { createGoogleCalendarEvent } from "../services/google-calendar.js";
 import { utilitiesApp } from "../utils/utilities-app.js";
+import { PRIORITY_EMOJIS } from "../constants.js";
 import { PriorityType, TextContextType, WizardStep } from "../types/session.js";
 
 export const eventsComposer = new Composer();
@@ -332,22 +333,24 @@ async function handleTextMessage(ctx: TextContextType) {
       }
       const creatorId = accountRes.rows[0].id;
 
-      // UPDATED: Now passing colorId to Google Calendar Service
-      const googleEventId = await createGoogleCalendarEvent({
-        telegramId,
-        title: session.title!,
-        description: session.description,
-        location: session.location,
-        colorId: session.colorId,
-        startTime,
-        endTime,
-      });
+      const { id: googleEventId, htmlLink: googleEventUrl } =
+        await createGoogleCalendarEvent({
+          telegramId,
+          title: session.title!,
+          description: session.description,
+          location: session.location,
+          colorId: session.colorId,
+          startTime,
+          endTime,
+        });
 
       const priorityValue = (session.priority || "medium").toLowerCase();
+      const priorityEmoji = PRIORITY_EMOJIS[priorityValue] || "🟡";
+      const priorityFormatted = `${priorityEmoji} [${priorityValue.toUpperCase()}]`;
 
       await query(
         `INSERT INTO events (creator_id, title, description, location, priority, start_time, end_time, google_event_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           creatorId,
           session.title,
@@ -364,8 +367,8 @@ async function handleTextMessage(ctx: TextContextType) {
         ? "🗓️ <b>Synced automatically with your Google Calendar!</b>"
         : "⚠️ Saved in database, but could not sync with Google Calendar. Connect your account using /connect_google.";
 
-      const safeTitle = session.title
-        ? session.title.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      const calendarLinkText = googleEventUrl
+        ? `\n\n🔗 <a href="${googleEventUrl}">View in Google Calendar</a>`
         : "";
 
       await ctx.reply(
@@ -374,11 +377,14 @@ async function handleTextMessage(ctx: TextContextType) {
           `📄 <b>Description:</b> ${escapeHtml(session.description)}\n` +
           `📍 <b>Location:</b> ${escapeHtml(session.location)}\n` +
           `🎨 <b>Color ID:</b> ${session.colorId || "Default"}\n` +
-          `🚨 <b>Priority:</b> ${priorityValue.toUpperCase()}\n` +
+          `🚨 <b>Priority:</b> ${priorityFormatted}\n` +
           `📆 <b>Start Time:</b> ${startTime.toLocaleString()}\n` +
           `⏳ <b>Duration:</b> ${durationInput} min\n\n` +
-          `${syncStatusMessage}`,
-        { parse_mode: "HTML" },
+          `${syncStatusMessage}${calendarLinkText}`,
+        {
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+        },
       );
 
       userSessions.delete(telegramId);
