@@ -230,7 +230,7 @@ eventsComposer.command(
 
 /**
  * Command: /all_events
- * Archive view displaying all past and future events without interactive pins.
+ * Displays full list with an interactive inline keyboard to delete any event.
  */
 eventsComposer.command("all_events", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
@@ -252,16 +252,29 @@ eventsComposer.command("all_events", async (ctx: CommandContext<Context>) => {
     }
 
     let message = "📜 <b>All Events Archive:</b>\n\n";
+    const keyboard = new InlineKeyboard();
 
     result.rows.forEach((evt, idx) => {
       const priorityKey = (evt.priority as string).toLowerCase();
       const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
       const formattedDate = new Date(evt.start_time).toLocaleString();
+      const itemNum = idx + 1;
 
-      message += `${idx + 1}. ${emoji} <b>${escapeHtml(evt.title)}</b>\n   🗓️ ${formattedDate}\n\n`;
+      message += `${itemNum}. ${emoji} <b>${escapeHtml(evt.title)}</b>\n   🗓️ ${formattedDate}\n\n`;
+
+      // Add delete button for this item to the keyboard grid
+      keyboard.text(`🗑️ ${itemNum}`, `delete_event_${evt.id}`);
+
+      // Break into a new row every 4 buttons so it fits cleanly on mobile screens
+      if (itemNum % 4 === 0) {
+        keyboard.row();
+      }
     });
 
-    await ctx.reply(message, { parse_mode: "HTML" });
+    await ctx.reply(message, {
+      parse_mode: "HTML",
+      reply_markup: keyboard,
+    });
   } catch (error) {
     console.error("Error fetching all events:", error);
     await ctx.reply("Failed to fetch event history from database.");
