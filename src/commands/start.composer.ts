@@ -25,7 +25,7 @@ startComposer.command("start", async (ctx: CommandContext<Context>) => {
       `Your account is active. I can help you manage your personal events and appointments easily.\n\n` +
       `📌 <b>Available Commands:</b>\n` +
       `• /new_event - Create a new event or appointment\n` +
-      `• /connect_google - Connect your Googlse Calendar account\n` +
+      `• /connect_google - Connect your Google Calendar account\n` +
       `• /upcoming_events - View all your scheduled upcoming events\n` +
       `• /all_events - View all your events\n` +
       `• /cancel - Cancel the current active process\n\n` +
