@@ -3,8 +3,10 @@
 ## Telegram Bot Commands
 
 - `/start` - Register or update user account in Neon DB.
-- `/new_event` - Trigger step-by-step state machine to create an appointment.
-- `/list_events` - Query and display upcoming appointments sorted by date.
+- `/new_event` - Trigger step-by-step state machine to create an events.
+- `/upcoming_events` - Query and display upcoming events sorted by date.
+- `/all_events` - Query and display events sorted by date.
+- `/cancel` - Cancel the current active process.
 
 ## Database Rules
 

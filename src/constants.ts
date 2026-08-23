@@ -31,3 +31,6 @@ export const GOOGLE_CALENDAR_COLORS = {
   "10": { name: "Basil", emoji: "🌿" },
   "11": { name: "Tomato", emoji: "🔴" },
 } as const;
+
+export const DEFAULT_EVENT_IMAGE =
+  "https://cdn-icons-png.flaticon.com/512/2693/2693507.png";

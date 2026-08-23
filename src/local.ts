@@ -5,6 +5,13 @@ import { bot } from "./bot.js";
 import { oauth2Client } from "./services/google-auth.js";
 import { PORT } from "./constants.js";
 
+// TODO: Add SQL cron job
+// SELECT cron.schedule(
+//   'delete_old_events',
+//   '0 0 * * *', -- Runs every night at midnight
+//   $$ DELETE FROM events WHERE COALESCE(end_time, start_time) < NOW() - INTERVAL '1 month' $$
+// );
+
 const app = express();
 
 app.get("/auth/google/callback", async (req, res) => {
@@ -95,7 +102,11 @@ async function main() {
       description: "Connect your Google Calendar account",
     },
     { command: "new_event", description: "Create a new appointment or event" },
-    { command: "list_events", description: "List all scheduled events" },
+    {
+      command: "upcoming_events",
+      description: "List all scheduled upcoming events",
+    },
+    { command: "all_events", description: "List all events" },
     { command: "cancel", description: "Cancel current active process" },
   ]);
 
