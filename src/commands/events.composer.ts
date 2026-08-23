@@ -174,45 +174,48 @@ eventsComposer.callbackQuery(
 );
 
 /**
- * Command: /list_events
+ * Command: /upcoming_events
  * Queries DB and lists active events.
  */
-eventsComposer.command("list_events", async (ctx: CommandContext<Context>) => {
-  const telegramId = ctx.from?.id;
-  if (!telegramId) return;
+eventsComposer.command(
+  "upcoming_events",
+  async (ctx: CommandContext<Context>) => {
+    const telegramId = ctx.from?.id;
+    if (!telegramId) return;
 
-  try {
-    const result = await query(
-      `SELECT e.id, e.title, e.priority, e.start_time 
+    try {
+      const result = await query(
+        `SELECT e.id, e.title, e.priority, e.start_time 
        FROM events e
        JOIN accounts acc ON e.creator_id = acc.id
        WHERE acc.telegram_id = $1 AND acc.is_active = TRUE
        ORDER BY e.start_time ASC`,
-      [telegramId],
-    );
+        [telegramId],
+      );
 
-    if (result.rows.length === 0) {
-      await ctx.reply("📅 You have no scheduled events.");
-      return;
+      if (result.rows.length === 0) {
+        await ctx.reply("📅 You have no scheduled events.");
+        return;
+      }
+
+      let message = "📅 <b>Your Upcoming Events:</b>\n\n";
+      const priorityEmoji = { low: "🟢", medium: "🟡", high: "🔴" };
+
+      result.rows.forEach((evt, idx) => {
+        const emoji =
+          priorityEmoji[evt.priority as "low" | "medium" | "high"] || "⚪";
+        const formattedDate = new Date(evt.start_time).toLocaleString();
+
+        message += `${idx + 1}. ${emoji} <b>${evt.title}</b>\n   🗓️ ${formattedDate}\n\n`;
+      });
+
+      await ctx.reply(message, { parse_mode: "HTML" });
+    } catch (error) {
+      console.error("Error fetching events:", error);
+      await ctx.reply("Failed to fetch events from database.");
     }
-
-    let message = "📅 <b>Your Upcoming Events:</b>\n\n";
-    const priorityEmoji = { low: "🟢", medium: "🟡", high: "🔴" };
-
-    result.rows.forEach((evt, idx) => {
-      const emoji =
-        priorityEmoji[evt.priority as "low" | "medium" | "high"] || "⚪";
-      const formattedDate = new Date(evt.start_time).toLocaleString();
-
-      message += `${idx + 1}. ${emoji} <b>${evt.title}</b>\n   🗓️ ${formattedDate}\n\n`;
-    });
-
-    await ctx.reply(message, { parse_mode: "HTML" });
-  } catch (error) {
-    console.error("Error fetching events:", error);
-    await ctx.reply("Failed to fetch events from database.");
-  }
-});
+  },
+);
 
 /**
  * Callback Query Handler: Priority Selection

@@ -95,7 +95,11 @@ async function main() {
       description: "Connect your Google Calendar account",
     },
     { command: "new_event", description: "Create a new appointment or event" },
-    { command: "list_events", description: "List all scheduled events" },
+    {
+      command: "upcoming_events",
+      description: "List all scheduled upcoming events",
+    },
+    { command: "all_events", description: "List all events" },
     { command: "cancel", description: "Cancel current active process" },
   ]);
 
