@@ -5,6 +5,13 @@ import { bot } from "./bot.js";
 import { oauth2Client } from "./services/google-auth.js";
 import { PORT } from "./constants.js";
 
+// TODO: Add SQL cron job
+// SELECT cron.schedule(
+//   'delete_old_events',
+//   '0 0 * * *', -- Runs every night at midnight
+//   $$ DELETE FROM events WHERE COALESCE(end_time, start_time) < NOW() - INTERVAL '1 month' $$
+// );
+
 const app = express();
 
 app.get("/auth/google/callback", async (req, res) => {
