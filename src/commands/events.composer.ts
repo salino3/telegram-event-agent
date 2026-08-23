@@ -4,7 +4,7 @@ import { query } from "../db.js";
 import { userSessions } from "../session/store.js";
 import { createGoogleCalendarEvent } from "../services/google-calendar.js";
 import { utilitiesApp } from "../utils/utilities-app.js";
-import { PRIORITY_EMOJIS } from "../constants.js";
+import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../constants.js";
 import { PriorityType, TextContextType, WizardStep } from "../types/session.js";
 
 export const eventsComposer = new Composer();
@@ -175,7 +175,8 @@ eventsComposer.callbackQuery(
 
 /**
  * Command: /upcoming_events
- * Queries DB and lists active events.
+ * Queries DB for active/imminent events using the end_time fallback logic,
+ * displays a consolidated text list, and generates inline pushpin buttons.
  */
 eventsComposer.command(
   "upcoming_events",
@@ -186,33 +187,138 @@ eventsComposer.command(
     try {
       const result = await query(
         `SELECT e.id, e.title, e.priority, e.start_time 
-       FROM events e
-       JOIN accounts acc ON e.creator_id = acc.id
-       WHERE acc.telegram_id = $1 AND acc.is_active = TRUE
-       ORDER BY e.start_time ASC`,
+         FROM events e
+         JOIN accounts acc ON e.creator_id = acc.id
+         WHERE acc.telegram_id = $1 
+           AND acc.is_active = TRUE
+           AND COALESCE(e.end_time, e.start_time + INTERVAL '3 hours') >= NOW()
+         ORDER BY e.start_time ASC`,
         [telegramId],
       );
 
       if (result.rows.length === 0) {
-        await ctx.reply("📅 You have no scheduled events.");
+        await ctx.reply("📅 You have no upcoming active events.");
         return;
       }
 
       let message = "📅 <b>Your Upcoming Events:</b>\n\n";
-      const priorityEmoji = { low: "🟢", medium: "🟡", high: "🔴" };
+      const keyboard = new InlineKeyboard();
 
       result.rows.forEach((evt, idx) => {
-        const emoji =
-          priorityEmoji[evt.priority as "low" | "medium" | "high"] || "⚪";
+        const priorityKey = (evt.priority as string).toLowerCase();
+        const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
         const formattedDate = new Date(evt.start_time).toLocaleString();
+        const num = idx + 1;
 
-        message += `${idx + 1}. ${emoji} <b>${evt.title}</b>\n   🗓️ ${formattedDate}\n\n`;
+        message += `${num}. ${emoji} <b>${escapeHtml(evt.title)}</b>\n   🗓️ ${formattedDate}\n\n`;
+
+        // Add interactive pushpin button
+        keyboard.text(`📌 #${num}`, `select_event_${evt.id}`);
+        if (num % 4 === 0) keyboard.row();
       });
 
-      await ctx.reply(message, { parse_mode: "HTML" });
+      await ctx.reply(message, {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      });
     } catch (error) {
-      console.error("Error fetching events:", error);
-      await ctx.reply("Failed to fetch events from database.");
+      console.error("Error fetching upcoming events:", error);
+      await ctx.reply("Failed to fetch upcoming events from database.");
+    }
+  },
+);
+
+/**
+ * Command: /all_events
+ * Archive view displaying all past and future events without interactive pins.
+ */
+eventsComposer.command("all_events", async (ctx: CommandContext<Context>) => {
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+
+  try {
+    const result = await query(
+      `SELECT e.id, e.title, e.priority, e.start_time
+       FROM events e
+       JOIN accounts acc ON e.creator_id = acc.id
+       WHERE acc.telegram_id = $1 AND acc.is_active = TRUE
+       ORDER BY e.start_time DESC`,
+      [telegramId],
+    );
+
+    if (result.rows.length === 0) {
+      await ctx.reply("📜 No event history found.");
+      return;
+    }
+
+    let message = "📜 <b>All Events Archive:</b>\n\n";
+
+    result.rows.forEach((evt, idx) => {
+      const priorityKey = (evt.priority as string).toLowerCase();
+      const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
+      const formattedDate = new Date(evt.start_time).toLocaleString();
+
+      message += `${idx + 1}. ${emoji} <b>${escapeHtml(evt.title)}</b>\n   🗓️ ${formattedDate}\n\n`;
+    });
+
+    await ctx.reply(message, { parse_mode: "HTML" });
+  } catch (error) {
+    console.error("Error fetching all events:", error);
+    await ctx.reply("Failed to fetch event history from database.");
+  }
+});
+
+/**
+ * Callback Query: Direct Pushpin Selection (select_event_X)
+ * Directly displays the event image (or default photo) with full details
+ * and inline action buttons (Edit & Delete).
+ */
+eventsComposer.callbackQuery(
+  /^select_event_(\d+)$/,
+  async (ctx: CallbackQueryContext<Context>) => {
+    const eventId = ctx.match[1];
+
+    try {
+      const result = await query(
+        `SELECT e.id, e.title, e.priority, e.start_time, e.end_time, e.description, e.location,
+                (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id
+         FROM events e WHERE e.id = $1`,
+        [eventId],
+      );
+
+      if (result.rows.length === 0) {
+        await ctx.answerCallbackQuery({ text: "Event not found." });
+        return;
+      }
+
+      const evt = result.rows[0];
+      const formattedStartDate = new Date(evt.start_time).toLocaleString();
+      const priorityKey = (evt.priority as string).toLowerCase();
+      const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
+
+      const captionText =
+        `📌 <b>${escapeHtml(evt.title)}</b>\n\n` +
+        `🚨 <b>Priority:</b> ${emoji} ${evt.priority.toUpperCase()}\n` +
+        `📅 <b>Date:</b> ${formattedStartDate}\n` +
+        `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
+        `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}`;
+
+      const actionKeyboard = new InlineKeyboard()
+        .text("✏️ Edit", `edit_event_${evt.id}`)
+        .text("🗑️ Delete", `delete_event_${evt.id}`);
+
+      await ctx.answerCallbackQuery();
+
+      const photoToUpload = evt.photo_id || DEFAULT_EVENT_IMAGE;
+
+      await ctx.replyWithPhoto(photoToUpload, {
+        caption: captionText,
+        parse_mode: "HTML",
+        reply_markup: actionKeyboard,
+      });
+    } catch (error) {
+      console.error("Error fetching event details:", error);
+      await ctx.answerCallbackQuery({ text: "Error fetching event details." });
     }
   },
 );
