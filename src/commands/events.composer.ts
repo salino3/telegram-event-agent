@@ -200,8 +200,8 @@ eventsComposer.command(
          JOIN accounts acc ON e.creator_id = acc.id
          WHERE acc.telegram_id = $1 
            AND acc.is_active = TRUE
-           AND COALESCE(e.end_time, e.start_time + INTERVAL '3 hours') >= NOW()
-         ORDER BY e.start_time ASC`,
+           AND COALESCE(e.end_time::timestamptz, e.start_time::timestamptz + INTERVAL '3 hours') >= NOW()
+         ORDER BY e.start_time::timestamptz ASC`,
         [telegramId],
       );
 
@@ -214,7 +214,7 @@ eventsComposer.command(
       const keyboard = new InlineKeyboard();
 
       result.rows.forEach((evt, idx) => {
-        const priorityKey = (evt.priority as string).toLowerCase();
+        const priorityKey = String(evt.priority || "medium").toLowerCase();
         const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
         const formattedDate = new Date(evt.start_time).toLocaleString();
         const num = idx + 1;
