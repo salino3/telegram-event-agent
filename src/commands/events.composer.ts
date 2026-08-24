@@ -4,6 +4,7 @@ import { query } from "../db.js";
 import { userSessions } from "../session/store.js";
 import {
   createGoogleCalendarEvent,
+  deleteGoogleCalendarEvent,
   updateGoogleCalendarEvent,
 } from "../services/google-calendar.js";
 import { utilitiesApp } from "../utils/utilities-app.js";
@@ -347,36 +348,53 @@ eventsComposer.callbackQuery(
 /**
  * Callback Query: Delete Event directly by ID
  */
+/**
+ * Callback Query: Delete Event directly by ID
+ */
 eventsComposer.callbackQuery(
   /^delete_event_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
-    const eventId = ctx.match[1];
+    const eventId = parseInt(ctx.match[1], 10);
     const telegramId = ctx.from.id;
 
     try {
-      // 1. Delete associated attachments first if cascade isn't set
-      await query(`DELETE FROM event_attachments WHERE event_id = $1`, [
-        eventId,
-      ]);
-
-      // 2. Delete the event ensuring it belongs to the active user
-      const result = await query(
-        `DELETE FROM events 
+      // 1. Fetch Google Event ID before deleting from DB
+      const evtRes = await query(
+        `SELECT google_event_id FROM events 
          WHERE id = $1 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)`,
         [eventId, telegramId],
       );
 
-      if (result.rowCount === 0) {
+      if (evtRes.rows.length === 0) {
         await ctx.answerCallbackQuery({
           text: "Event not found or already deleted.",
         });
         return;
       }
 
-      await ctx.answerCallbackQuery({ text: "🗑️ Event deleted successfully!" });
+      const googleEventId = evtRes.rows[0].google_event_id;
 
-      // Optionally notify user in chat
-      await ctx.reply("🗑️ Event has been removed from your history.");
+      // 2. Delete associated attachments first if cascade isn't set
+      await query(`DELETE FROM event_attachments WHERE event_id = $1`, [
+        eventId,
+      ]);
+
+      // 3. Delete the event from PostgreSQL
+      await query(
+        `DELETE FROM events 
+         WHERE id = $1 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)`,
+        [eventId, telegramId],
+      );
+
+      // 4. Delete from Google Calendar if synced
+      if (googleEventId) {
+        await deleteGoogleCalendarEvent(telegramId, googleEventId);
+      }
+
+      await ctx.answerCallbackQuery({ text: "🗑️ Event deleted successfully!" });
+      await ctx.reply(
+        "🗑️ Event has been removed from your calendar and database.",
+      );
     } catch (error) {
       console.error("Error deleting event:", error);
       await ctx.answerCallbackQuery({ text: "Failed to delete event." });

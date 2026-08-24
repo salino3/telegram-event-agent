@@ -140,3 +140,36 @@ export async function updateGoogleCalendarEvent(
     return false;
   }
 }
+
+//
+export async function deleteGoogleCalendarEvent(
+  telegramId: number,
+  googleEventId: string,
+): Promise<boolean> {
+  try {
+    const dbRes = await query(
+      `SELECT ga.access_token, ga.refresh_token 
+       FROM google_accounts ga
+       JOIN accounts a ON ga.account_id = a.id
+       WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
+      [String(telegramId)],
+    );
+
+    if (dbRes.rows.length === 0) return false;
+
+    const { access_token, refresh_token } = dbRes.rows[0];
+    oauth2Client.setCredentials({ access_token, refresh_token });
+
+    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+
+    await calendar.events.delete({
+      calendarId: "primary",
+      eventId: googleEventId,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error deleting Google Calendar event:", error);
+    return false;
+  }
+}
