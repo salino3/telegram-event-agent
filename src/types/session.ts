@@ -8,12 +8,24 @@ export enum WizardStep {
   AWAITING_PRIORITY = "AWAITING_PRIORITY",
   AWAITING_DATE = "AWAITING_DATE",
   AWAITING_DURATION = "AWAITING_DURATION",
+  // Specific Field Editing Steps
+  AWAITING_EDIT_SELECTION = "AWAITING_EDIT_SELECTION",
+  AWAITING_EDIT_VALUE = "AWAITING_EDIT_VALUE",
 }
 
 export type PriorityType = "low" | "medium" | "high";
 
+export type EditingFieldType =
+  | "title"
+  | "description"
+  | "location"
+  | "priority"
+  | "start_time";
+
 export interface UserSessionProps {
   step: WizardStep;
+  editingEventId?: number;
+  editingField?: EditingFieldType;
   title?: string;
   description?: string;
   location?: string;

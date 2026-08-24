@@ -13,6 +13,18 @@ export interface CreateEventInput {
   endTime: Date;
 }
 
+export interface UpdateEventInput {
+  telegramId: number;
+  googleEventId: string;
+  title?: string;
+  description?: string;
+  location?: string;
+  colorId?: string;
+  priority?: string;
+  startTime?: Date;
+  endTime?: Date;
+}
+
 export async function createGoogleCalendarEvent(
   input: CreateEventInput,
 ): Promise<{ id: string | null; htmlLink: string | null }> {
@@ -64,5 +76,54 @@ export async function createGoogleCalendarEvent(
   } catch (error) {
     console.error("Error creating Google Calendar event:", error);
     return { id: null, htmlLink: null };
+  }
+}
+
+//
+export async function updateGoogleCalendarEvent(
+  input: UpdateEventInput,
+): Promise<boolean> {
+  try {
+    const dbRes = await query(
+      `SELECT ga.access_token, ga.refresh_token 
+       FROM google_accounts ga
+       JOIN accounts a ON ga.account_id = a.id
+       WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
+      [String(input.telegramId)],
+    );
+
+    if (dbRes.rows.length === 0) return false;
+
+    const { access_token, refresh_token } = dbRes.rows[0];
+    oauth2Client.setCredentials({ access_token, refresh_token });
+
+    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+
+    const requestBody: Record<string, any> = {};
+    if (input.title) requestBody.summary = input.title;
+    if (input.location !== undefined) requestBody.location = input.location;
+    if (input.colorId !== undefined) requestBody.colorId = input.colorId;
+
+    if (input.description || input.priority) {
+      const priorityLabel = (input.priority || "medium").toUpperCase();
+      requestBody.description =
+        `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
+    }
+
+    if (input.startTime)
+      requestBody.start = { dateTime: input.startTime.toISOString() };
+    if (input.endTime)
+      requestBody.end = { dateTime: input.endTime.toISOString() };
+
+    await calendar.events.patch({
+      calendarId: "primary",
+      eventId: input.googleEventId,
+      requestBody,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error updating Google Calendar event:", error);
+    return false;
   }
 }
