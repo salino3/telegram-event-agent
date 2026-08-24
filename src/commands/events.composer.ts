@@ -314,7 +314,9 @@ eventsComposer.callbackQuery(
       }
 
       const evt = result.rows[0];
-      const formattedStartDate = new Date(evt.start_time).toLocaleString();
+      const formattedStartDate = new Date(evt.start_time)
+        .toLocaleString()
+        .replace(",", "");
       const priorityKey = (evt.priority as string).toLowerCase();
       const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
 
