@@ -99,6 +99,10 @@ export async function updateGoogleCalendarEvent(
 
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
 
+    // Detect system/server timezone or default to local environment
+    const userTimeZone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
     const requestBody: Record<string, any> = {};
     if (input.title) requestBody.summary = input.title;
     if (input.location !== undefined) requestBody.location = input.location;
@@ -110,10 +114,19 @@ export async function updateGoogleCalendarEvent(
         `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
     }
 
-    if (input.startTime)
-      requestBody.start = { dateTime: input.startTime.toISOString() };
-    if (input.endTime)
-      requestBody.end = { dateTime: input.endTime.toISOString() };
+    if (input.startTime) {
+      requestBody.start = {
+        dateTime: input.startTime.toISOString(),
+        timeZone: userTimeZone,
+      };
+    }
+
+    if (input.endTime) {
+      requestBody.end = {
+        dateTime: input.endTime.toISOString(),
+        timeZone: userTimeZone,
+      };
+    }
 
     await calendar.events.patch({
       calendarId: "primary",

@@ -586,13 +586,51 @@ async function saveEventUpdate(
   value: any,
 ) {
   try {
-    const dbRes = await query(
-      `UPDATE events 
-       SET ${field} = $1, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $2 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $3)
-       RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
-      [value, eventId, telegramId],
-    );
+    let dbRes;
+
+    if (field === "start_time") {
+      // Fetch current start and end times to maintain the event's original duration
+      const currentEvtRes = await query(
+        `SELECT start_time, end_time FROM events WHERE id = $1`,
+        [eventId],
+      );
+
+      let newEndTime: string | null = null;
+
+      if (currentEvtRes.rows.length > 0) {
+        const { start_time, end_time } = currentEvtRes.rows[0];
+        const newStart = new Date(value);
+
+        if (start_time && end_time) {
+          const durationMs =
+            new Date(end_time).getTime() - new Date(start_time).getTime();
+          newEndTime = new Date(newStart.getTime() + durationMs).toISOString();
+        } else {
+          // Default to 1 hour duration if end_time was null
+          newEndTime = new Date(
+            newStart.getTime() + 60 * 60 * 1000,
+          ).toISOString();
+        }
+      }
+
+      // Update both start_time and end_time together
+      dbRes = await query(
+        `UPDATE events 
+         SET start_time = $1, end_time = $2, updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $3 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $4)
+         RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
+        [value, newEndTime, eventId, telegramId],
+      );
+    } else {
+      // Standard update for single fields (title, description, location, priority)
+      dbRes = await query(
+        `UPDATE events 
+         SET ${field} = $1, updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $2 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $3)
+         RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
+        [value, eventId, telegramId],
+      );
+    }
 
     const updatedEvt = dbRes.rows[0];
 
@@ -625,8 +663,12 @@ async function saveEventUpdate(
       start_time: "Start Time",
     };
 
+    // Format display value nicely (convert ISO dates to local readable format)
+    const displayValue =
+      field === "start_time" ? new Date(value).toLocaleString() : value;
+
     await ctx.reply(
-      `✅ <b>${fieldLabels[field]} updated successfully!</b>\nNew value: <code>${value}</code>`,
+      `✅ <b>${fieldLabels[field]} updated successfully!</b>\nNew value: <code>${escapeHtml(String(displayValue))}</code>`,
       { parse_mode: "HTML" },
     );
 
