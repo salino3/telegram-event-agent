@@ -2,6 +2,9 @@ import { calendar, calendar_v3 } from "@googleapis/calendar";
 import { oauth2Client } from "./google-auth.js";
 import { query } from "../db.js";
 
+// Initialize calendar client without auth attached globally
+const calendarClient = calendar({ version: "v3" });
+
 export interface CreateEventInput {
   telegramId: number;
   title: string;
@@ -44,14 +47,13 @@ export async function createGoogleCalendarEvent(
     const { access_token, refresh_token, email } = dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
-    const calendarClient = calendar({ version: "v3", auth: oauth2Client });
-
     const priorityLabel = (input.priority || "medium").toUpperCase();
     const fullDescription =
       `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
 
-    // Insert event in Google Calendar
+    // Pass auth directly in the API call using 'auth: oauth2Client as any'
     const response = await calendarClient.events.insert({
+      auth: oauth2Client as any,
       calendarId: "primary",
       requestBody: {
         summary: input.title,
@@ -97,8 +99,6 @@ export async function updateGoogleCalendarEvent(
     const { access_token, refresh_token } = dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
-    const calendarClient = calendar({ version: "v3", auth: oauth2Client });
-
     // Detect system/server timezone or default to local environment
     const userTimeZone =
       Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -129,6 +129,7 @@ export async function updateGoogleCalendarEvent(
     }
 
     await calendarClient.events.patch({
+      auth: oauth2Client as any,
       calendarId: "primary",
       eventId: input.googleEventId,
       requestBody,
@@ -141,6 +142,7 @@ export async function updateGoogleCalendarEvent(
   }
 }
 
+//
 export async function deleteGoogleCalendarEvent(
   telegramId: number,
   googleEventId: string,
@@ -159,9 +161,8 @@ export async function deleteGoogleCalendarEvent(
     const { access_token, refresh_token } = dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
-    const calendarClient = calendar({ version: "v3", auth: oauth2Client });
-
     await calendarClient.events.delete({
+      auth: oauth2Client as any,
       calendarId: "primary",
       eventId: googleEventId,
     });
