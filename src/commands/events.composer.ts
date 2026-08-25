@@ -598,6 +598,7 @@ eventsComposer.callbackQuery(
 );
 
 // 2. Execute DB & Google Update upon completion
+// Execute DB & Google Update upon completion and refresh the Event Card UI
 async function saveEventUpdate(
   ctx: Context,
   telegramId: number,
@@ -675,6 +676,10 @@ async function saveEventUpdate(
       });
     }
 
+    // Clean up active session
+    userSessions.delete(telegramId);
+
+    // Render Refreshed Event Card with Success Header
     const fieldLabels: Record<EditingFieldType, string> = {
       title: "Title",
       description: "Description",
@@ -683,20 +688,84 @@ async function saveEventUpdate(
       start_time: "Start Time",
     };
 
-    // Format display value nicely (convert ISO dates to local readable format)
-    const displayValue =
-      field === "start_time" ? new Date(value).toLocaleString() : value;
-
-    await ctx.reply(
-      `✅ <b>${fieldLabels[field]} updated successfully!</b>\nNew value: <code>${escapeHtml(String(displayValue))}</code>`,
-      { parse_mode: "HTML" },
+    await sendUpdatedEventCard(
+      ctx,
+      eventId,
+      `✅ <b>[${fieldLabels[field]}] updated successfully!</b>\n\n`,
     );
-
-    userSessions.delete(telegramId);
   } catch (error) {
     console.error("Error updating event:", error);
     await ctx.reply("❌ Failed to update event in database.");
   }
+}
+
+/**
+ * Helper to refresh/update the full Event Card UI in place without creating a new message.
+ */
+async function sendUpdatedEventCard(
+  ctx: Context,
+  eventId: number,
+  headerPrefix: string = ""
+) {
+  const result = await query(
+    `SELECT e.id, e.title, e.priority, e.start_time, e.end_time, e.description, e.location,
+            (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id
+     FROM events e WHERE e.id = $1`,
+    [eventId]
+  );
+
+  if (result.rows.length === 0) {
+    await ctx.reply("Event not found.");
+    return;
+  }
+
+  const evt = result.rows[0];
+  const formattedStartDate = new Date(evt.start_time)
+    .toLocaleString()
+    .replace(",", "");
+  const priorityKey = (evt.priority as string).toLowerCase();
+  const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
+
+  const captionText =
+    `${headerPrefix}` +
+    `📌 <b>${escapeHtml(evt.title)}</b>\n\n` +
+    `🚨 <b>Priority:</b> ${emoji} ${evt.priority.toUpperCase()}\n` +
+    `📅 <b>Date:</b> ${formattedStartDate}\n` +
+    `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
+    `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}`;
+
+  const actionKeyboard = new InlineKeyboard()
+    .text("✏️ Edit", `edit_event_${evt.id}`)
+    .text("🗑️ Delete", `delete_event_${evt.id}`);
+
+  const photoToUpload = evt.photo_id || DEFAULT_EVENT_IMAGE;
+
+  // Check if we are inside a callback query (inline button interaction) to edit in-place
+  if (ctx.callbackQuery && ctx.callbackQuery.message) {
+    try {
+      await ctx.editMessageMedia(
+        {
+          type: "photo",
+          media: photoToUpload,
+          caption: captionText,
+          parse_mode: "HTML",
+        },
+        {
+          reply_markup: actionKeyboard,
+        }
+      );
+      return;
+    } catch (err) {
+      console.warn("Could not edit message media in place, sending new photo...", err);
+    }
+  }
+
+  // Fallback: send a new photo message if editing in place isn't applicable
+  await ctx.replyWithPhoto(photoToUpload, {
+    caption: captionText,
+    parse_mode: "HTML",
+    reply_markup: actionKeyboard,
+  });
 }
 
 /**
