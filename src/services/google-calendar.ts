@@ -1,4 +1,4 @@
-import { google } from "googleapis";
+import { calendar, calendar_v3 } from "@googleapis/calendar";
 import { oauth2Client } from "./google-auth.js";
 import { query } from "../db.js";
 
@@ -44,14 +44,14 @@ export async function createGoogleCalendarEvent(
     const { access_token, refresh_token, email } = dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
-    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const calendarClient = calendar({ version: "v3", auth: oauth2Client });
 
     const priorityLabel = (input.priority || "medium").toUpperCase();
     const fullDescription =
       `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
 
     // Insert event in Google Calendar
-    const response = await calendar.events.insert({
+    const response = await calendarClient.events.insert({
       calendarId: "primary",
       requestBody: {
         summary: input.title,
@@ -97,13 +97,13 @@ export async function updateGoogleCalendarEvent(
     const { access_token, refresh_token } = dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
-    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const calendarClient = calendar({ version: "v3", auth: oauth2Client });
 
     // Detect system/server timezone or default to local environment
     const userTimeZone =
       Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
-    const requestBody: Record<string, any> = {};
+    const requestBody: calendar_v3.Schema$Event = {};
     if (input.title) requestBody.summary = input.title;
     if (input.location !== undefined) requestBody.location = input.location;
     if (input.colorId !== undefined) requestBody.colorId = input.colorId;
@@ -128,7 +128,7 @@ export async function updateGoogleCalendarEvent(
       };
     }
 
-    await calendar.events.patch({
+    await calendarClient.events.patch({
       calendarId: "primary",
       eventId: input.googleEventId,
       requestBody,
@@ -141,7 +141,6 @@ export async function updateGoogleCalendarEvent(
   }
 }
 
-//
 export async function deleteGoogleCalendarEvent(
   telegramId: number,
   googleEventId: string,
@@ -160,9 +159,9 @@ export async function deleteGoogleCalendarEvent(
     const { access_token, refresh_token } = dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
-    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const calendarClient = calendar({ version: "v3", auth: oauth2Client });
 
-    await calendar.events.delete({
+    await calendarClient.events.delete({
       calendarId: "primary",
       eventId: googleEventId,
     });

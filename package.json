@@ -13,10 +13,11 @@
   "license": "ISC",
   "packageManager": "pnpm@10.33.2",
   "dependencies": {
+    "@googleapis/calendar": "^16.0.0",
     "@neondatabase/serverless": "^1.1.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "googleapis": "^175.0.0",
+    "google-auth-library": "^11.0.2",
     "grammy": "^1.45.1"
   },
   "devDependencies": {
