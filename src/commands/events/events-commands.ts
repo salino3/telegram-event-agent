@@ -1,66 +1,25 @@
 import { CommandContext, Composer, Context, InlineKeyboard } from "grammy";
 import { CallbackQueryContext } from "grammy/web";
-import { query } from "../db.js";
-import { userSessions } from "../session/store.js";
+import { query } from "../../db.js";
+import { userSessions } from "../../session/store.js";
 import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
   updateGoogleCalendarEvent,
-} from "../services/google-calendar.js";
-import { utilitiesApp } from "../utils/utilities-app.js";
-import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../constants.js";
+} from "../../services/google-calendar.js";
+import { utilitiesApp } from "../../utils/utilities-app.js";
+import { proceedAfterLocation, saveEventUpdate } from "./events-utils.js";
+import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
 import {
   EditingFieldType,
   PriorityType,
   TextContextType,
   WizardStep,
-} from "../types/session.js";
+} from "../../types/session.js";
 
 export const eventsComposer = new Composer();
 
-const { parseCustomDate, buildColorKeyboard, escapeHtml, getExampleDate } =
-  utilitiesApp();
-
-/**
- * Helper to proceed past location and determine whether to present
- * the color selection step (if connected to Google Calendar) or skip to priority.
- */
-async function proceedAfterLocation(
-  ctx: Context,
-  telegramId: number,
-  session: any,
-) {
-  const googleRes = await query(
-    `SELECT ga.id FROM google_accounts ga 
-     JOIN accounts a ON ga.account_id = a.id 
-     WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
-    [String(telegramId)],
-  );
-
-  const hasGoogleAccount = googleRes.rows.length > 0;
-
-  if (hasGoogleAccount) {
-    session.step = WizardStep.AWAITING_COLOR;
-    await ctx.reply(
-      "🎨 Choose a <b>Google Calendar color</b> for this event:",
-      {
-        parse_mode: "HTML",
-        reply_markup: buildColorKeyboard(),
-      },
-    );
-  } else {
-    session.step = WizardStep.AWAITING_PRIORITY;
-    const priorityKeyboard = new InlineKeyboard()
-      .text("🟢 Low", "priority_low")
-      .text("🟡 Medium", "priority_medium")
-      .text("🔴 High", "priority_high");
-
-    await ctx.reply("🚨 Select the <b>priority level</b>:", {
-      parse_mode: "HTML",
-      reply_markup: priorityKeyboard,
-    });
-  }
-}
+const { parseCustomDate, escapeHtml, getExampleDate } = utilitiesApp();
 
 /**
  * Command: /new_event
@@ -69,6 +28,7 @@ eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 
+  userSessions.delete(telegramId);
   userSessions.set(telegramId, { step: WizardStep.AWAITING_TITLE });
 
   await ctx.reply(
@@ -98,48 +58,54 @@ eventsComposer.command("cancel", async (ctx: CommandContext<Context>) => {
 /**
  * Callback: Color Selection
  */
-eventsComposer.callbackQuery(/^color_(\d+)$/, async (ctx) => {
-  const telegramId = ctx.from.id;
-  const session = userSessions.get(telegramId);
-  if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
+eventsComposer.callbackQuery(
+  /^color_(\d+)$/,
+  async (ctx: CallbackQueryContext<Context>) => {
+    const telegramId = ctx.from.id;
+    const session = userSessions.get(telegramId);
+    if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
 
-  session.colorId = ctx.match[1];
-  session.step = WizardStep.AWAITING_PRIORITY;
+    session.colorId = ctx.match[1];
+    session.step = WizardStep.AWAITING_PRIORITY;
 
-  await ctx.answerCallbackQuery();
-  const priorityKeyboard = new InlineKeyboard()
-    .text("🟢 Low", "priority_low")
-    .text("🟡 Medium", "priority_medium")
-    .text("🔴 High", "priority_high");
+    await ctx.answerCallbackQuery();
+    const priorityKeyboard = new InlineKeyboard()
+      .text("🟢 Low", "priority_low")
+      .text("🟡 Medium", "priority_medium")
+      .text("🔴 High", "priority_high");
 
-  await ctx.reply("🚨 Select the <b>priority level</b>:", {
-    parse_mode: "HTML",
-    reply_markup: priorityKeyboard,
-  });
-});
+    await ctx.reply("🚨 Select the <b>priority level</b>:", {
+      parse_mode: "HTML",
+      reply_markup: priorityKeyboard,
+    });
+  },
+);
 
 /**
  * Callback: Skip Color Selection
  */
-eventsComposer.callbackQuery("skip_color", async (ctx) => {
-  const telegramId = ctx.from.id;
-  const session = userSessions.get(telegramId);
-  if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
+eventsComposer.callbackQuery(
+  "skip_color",
+  async (ctx: CallbackQueryContext<Context>) => {
+    const telegramId = ctx.from.id;
+    const session = userSessions.get(telegramId);
+    if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
 
-  session.colorId = undefined;
-  session.step = WizardStep.AWAITING_PRIORITY;
+    session.colorId = undefined;
+    session.step = WizardStep.AWAITING_PRIORITY;
 
-  await ctx.answerCallbackQuery();
-  const priorityKeyboard = new InlineKeyboard()
-    .text("🟢 Low", "priority_low")
-    .text("🟡 Medium", "priority_medium")
-    .text("🔴 High", "priority_high");
+    await ctx.answerCallbackQuery();
+    const priorityKeyboard = new InlineKeyboard()
+      .text("🟢 Low", "priority_low")
+      .text("🟡 Medium", "priority_medium")
+      .text("🔴 High", "priority_high");
 
-  await ctx.reply("🚨 Select the <b>priority level</b>:", {
-    parse_mode: "HTML",
-    reply_markup: priorityKeyboard,
-  });
-});
+    await ctx.reply("🚨 Select the <b>priority level</b>:", {
+      parse_mode: "HTML",
+      reply_markup: priorityKeyboard,
+    });
+  },
+);
 
 /**
  * Callback Query Handler: Skip Optional Fields
@@ -347,9 +313,6 @@ eventsComposer.callbackQuery(
   },
 );
 
-/**
- * Callback Query: Delete Event directly by ID
- */
 /**
  * Callback Query: Delete Event directly by ID
  */
@@ -597,108 +560,6 @@ eventsComposer.callbackQuery(
   },
 );
 
-// 2. Execute DB & Google Update upon completion
-async function saveEventUpdate(
-  ctx: Context,
-  telegramId: number,
-  eventId: number,
-  field: EditingFieldType,
-  value: any,
-) {
-  try {
-    let dbRes;
-
-    if (field === "start_time") {
-      // Fetch current start and end times to maintain the event's original duration
-      const currentEvtRes = await query(
-        `SELECT start_time, end_time FROM events WHERE id = $1`,
-        [eventId],
-      );
-
-      let newEndTime: string | null = null;
-
-      if (currentEvtRes.rows.length > 0) {
-        const { start_time, end_time } = currentEvtRes.rows[0];
-        const newStart = new Date(value);
-
-        if (start_time && end_time) {
-          const durationMs =
-            new Date(end_time).getTime() - new Date(start_time).getTime();
-          newEndTime = new Date(newStart.getTime() + durationMs).toISOString();
-        } else {
-          // Default to 1 hour duration if end_time was null
-          newEndTime = new Date(
-            newStart.getTime() + 60 * 60 * 1000,
-          ).toISOString();
-        }
-      }
-
-      // Update both start_time and end_time together
-      dbRes = await query(
-        `UPDATE events 
-         SET start_time = $1, end_time = $2, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $3 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $4)
-         RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
-        [value, newEndTime, eventId, telegramId],
-      );
-    } else {
-      // Standard update for single fields (title, description, location, priority)
-      dbRes = await query(
-        `UPDATE events 
-         SET ${field} = $1, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $3)
-         RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
-        [value, eventId, telegramId],
-      );
-    }
-
-    const updatedEvt = dbRes.rows[0];
-
-    if (!updatedEvt) {
-      await ctx.reply("❌ Event update failed or event not found.");
-      return;
-    }
-
-    // Sync to Google Calendar
-    if (updatedEvt.google_event_id) {
-      await updateGoogleCalendarEvent({
-        telegramId,
-        googleEventId: updatedEvt.google_event_id,
-        title: updatedEvt.title,
-        description: updatedEvt.description,
-        location: updatedEvt.location,
-        priority: updatedEvt.priority,
-        startTime: new Date(updatedEvt.start_time),
-        endTime: updatedEvt.end_time
-          ? new Date(updatedEvt.end_time)
-          : undefined,
-      });
-    }
-
-    const fieldLabels: Record<EditingFieldType, string> = {
-      title: "Title",
-      description: "Description",
-      location: "Location",
-      priority: "Priority",
-      start_time: "Start Time",
-    };
-
-    // Format display value nicely (convert ISO dates to local readable format)
-    const displayValue =
-      field === "start_time" ? new Date(value).toLocaleString() : value;
-
-    await ctx.reply(
-      `✅ <b>${fieldLabels[field]} updated successfully!</b>\nNew value: <code>${escapeHtml(String(displayValue))}</code>`,
-      { parse_mode: "HTML" },
-    );
-
-    userSessions.delete(telegramId);
-  } catch (error) {
-    console.error("Error updating event:", error);
-    await ctx.reply("❌ Failed to update event in database.");
-  }
-}
-
 /**
  * Global Text Handler for State Machine Inputs (Wizard Flow)
  */
@@ -793,7 +654,6 @@ async function handleTextMessage(ctx: TextContextType) {
       );
       if (accountRes.rows.length === 0) {
         await ctx.reply("Account not found. Please run /start first.");
-        userSessions.delete(telegramId);
         return;
       }
       const creatorId = accountRes.rows[0].id;
@@ -853,11 +713,11 @@ async function handleTextMessage(ctx: TextContextType) {
           link_preview_options: { is_disabled: true },
         },
       );
-
-      userSessions.delete(telegramId);
     } catch (error) {
       console.error("Error saving event:", error);
       await ctx.reply("Failed to save event to database.");
+    } finally {
+      userSessions.delete(telegramId);
     }
     return;
   }

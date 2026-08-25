@@ -1,5 +1,4 @@
 import express from "express";
-import { google } from "googleapis";
 import { query } from "./db.js";
 import { bot } from "./bot.js";
 import { oauth2Client } from "./services/google-auth.js";
@@ -24,14 +23,15 @@ app.get("/auth/google/callback", async (req, res) => {
 
     const telegramId = String(state); // Coincide con la string plana del state
 
-    // 1. Obtener tokens de Google
+    // 1. Get Google tokens
     const { tokens } = await oauth2Client.getToken(code as string);
     oauth2Client.setCredentials(tokens);
 
-    // 2. Obtener información del usuario (Email)
-    const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
-    const userInfo = await oauth2.userinfo.get();
-    const userEmail = userInfo.data.email;
+    const userInfoResponse = await oauth2Client.request<{ email?: string }>({
+      url: "https://www.googleapis.com/oauth2/v2/userinfo",
+    });
+
+    const userEmail = userInfoResponse.data.email;
 
     if (!userEmail) {
       throw new Error("Could not retrieve email from Google.");
