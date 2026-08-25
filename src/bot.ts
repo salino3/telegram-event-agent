@@ -1,6 +1,6 @@
 import { Bot } from "grammy";
 import { startComposer } from "./commands/start.commands.js";
-import { eventsComposer } from "./commands/events.composer.js";
+import { eventsComposer } from "./commands/events/events-commands.js";
 import { googleAuthComposer } from "./commands/google.commands.js";
 import { TELEGRAM_BOT_TOKEN } from "./constants.js";
 

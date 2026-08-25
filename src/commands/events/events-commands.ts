@@ -1,20 +1,20 @@
 import { CommandContext, Composer, Context, InlineKeyboard } from "grammy";
 import { CallbackQueryContext } from "grammy/web";
-import { query } from "../db.js";
-import { userSessions } from "../session/store.js";
+import { query } from "../../db.js";
+import { userSessions } from "../../session/store.js";
 import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
   updateGoogleCalendarEvent,
-} from "../services/google-calendar.js";
-import { utilitiesApp } from "../utils/utilities-app.js";
-import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../constants.js";
+} from "../../services/google-calendar.js";
+import { utilitiesApp } from "../../utils/utilities-app.js";
+import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
 import {
   EditingFieldType,
   PriorityType,
   TextContextType,
   WizardStep,
-} from "../types/session.js";
+} from "../../types/session.js";
 
 export const eventsComposer = new Composer();
 
@@ -348,9 +348,6 @@ eventsComposer.callbackQuery(
   },
 );
 
-/**
- * Callback Query: Delete Event directly by ID
- */
 /**
  * Callback Query: Delete Event directly by ID
  */
