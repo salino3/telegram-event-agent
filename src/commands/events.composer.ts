@@ -69,6 +69,7 @@ eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 
+  userSessions.delete(telegramId);
   userSessions.set(telegramId, { step: WizardStep.AWAITING_TITLE });
 
   await ctx.reply(
@@ -705,13 +706,13 @@ async function saveEventUpdate(
 async function sendUpdatedEventCard(
   ctx: Context,
   eventId: number,
-  headerPrefix: string = ""
+  headerPrefix: string = "",
 ) {
   const result = await query(
     `SELECT e.id, e.title, e.priority, e.start_time, e.end_time, e.description, e.location,
             (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id
      FROM events e WHERE e.id = $1`,
-    [eventId]
+    [eventId],
   );
 
   if (result.rows.length === 0) {
@@ -752,11 +753,14 @@ async function sendUpdatedEventCard(
         },
         {
           reply_markup: actionKeyboard,
-        }
+        },
       );
       return;
     } catch (err) {
-      console.warn("Could not edit message media in place, sending new photo...", err);
+      console.warn(
+        "Could not edit message media in place, sending new photo...",
+        err,
+      );
     }
   }
 
@@ -862,7 +866,6 @@ async function handleTextMessage(ctx: TextContextType) {
       );
       if (accountRes.rows.length === 0) {
         await ctx.reply("Account not found. Please run /start first.");
-        userSessions.delete(telegramId);
         return;
       }
       const creatorId = accountRes.rows[0].id;
@@ -922,11 +925,11 @@ async function handleTextMessage(ctx: TextContextType) {
           link_preview_options: { is_disabled: true },
         },
       );
-
-      userSessions.delete(telegramId);
     } catch (error) {
       console.error("Error saving event:", error);
       await ctx.reply("Failed to save event to database.");
+    } finally {
+      userSessions.delete(telegramId);
     }
     return;
   }
