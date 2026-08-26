@@ -9,10 +9,29 @@ import { userSessions } from "../../session/store.js";
 const { buildColorKeyboard, escapeHtml } = utilitiesApp();
 
 /**
- * Helper to proceed past location and determine whether to present
- * the color selection step (if connected to Google Calendar) or skip to priority.
+ * 1. Called after Location is provided or skipped.
+ * Prompts the user to upload a photo (optional).
  */
 export async function proceedAfterLocation(
+  ctx: Context,
+  telegramId: number, // kept for uniform helper signatures across the flow
+  session: any,
+) {
+  session.step = WizardStep.AWAITING_PHOTO;
+
+  const skipKeyboard = new InlineKeyboard().text("➡️ Skip", "skip_photo");
+
+  await ctx.reply("📸 Send a <b>photo</b> for your event (or press Skip):", {
+    parse_mode: "HTML",
+    reply_markup: skipKeyboard,
+  });
+}
+
+/**
+ * 2. Called after Photo is uploaded OR skipped.
+ * Checks for Google Calendar connection to prompt for Color OR Priority.
+ */
+export async function proceedAfterPhoto(
   ctx: Context,
   telegramId: number,
   session: any,

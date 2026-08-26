@@ -5,10 +5,13 @@ import { userSessions } from "../../session/store.js";
 import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
-  updateGoogleCalendarEvent,
 } from "../../services/google-calendar.js";
 import { utilitiesApp } from "../../utils/utilities-app.js";
-import { proceedAfterLocation, saveEventUpdate } from "./events-utils.js";
+import {
+  proceedAfterLocation,
+  proceedAfterPhoto,
+  saveEventUpdate,
+} from "./events-utils.js";
 import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
 import {
   EditingFieldType,
@@ -675,9 +678,10 @@ async function handleTextMessage(ctx: TextContextType) {
       const priorityFormatted = `${priorityEmoji} [${priorityValue.toUpperCase()}]`;
 
       // Persist to Database
-      await query(
+      const eventInsertRes = await query(
         `INSERT INTO events (creator_id, title, description, location, priority, start_time, end_time, google_event_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+           RETURNING id`,
         [
           creatorId,
           session.title,
@@ -689,6 +693,16 @@ async function handleTextMessage(ctx: TextContextType) {
           googleEventId,
         ],
       );
+
+      const createdEventId = eventInsertRes.rows[0].id;
+
+      if (session.photoId && createdEventId) {
+        await query(
+          `INSERT INTO event_attachments (event_id, uploaded_by, file_type, content)
+     VALUES ($1, $2, 'photo', $3)`,
+          [createdEventId, creatorId, session.photoId],
+        );
+      }
 
       const syncStatusMessage = googleEventId
         ? "🗓️ <b>Synced automatically with your Google Calendar!</b>"
@@ -749,3 +763,41 @@ async function handleTextMessage(ctx: TextContextType) {
 }
 
 eventsComposer.on("message:text", handleTextMessage);
+
+/**
+ * Callback Query: Skip Photo Upload
+ */
+eventsComposer.callbackQuery(
+  "skip_photo",
+  async (ctx: CallbackQueryContext<Context>) => {
+    const telegramId = ctx.from.id;
+    const session = userSessions.get(telegramId);
+    if (!session || session.step !== WizardStep.AWAITING_PHOTO) return;
+
+    session.photoId = undefined;
+    await ctx.answerCallbackQuery();
+
+    // Proceed to Color or Priority
+    await proceedAfterPhoto(ctx, telegramId, session);
+  },
+);
+
+/**
+ * Handle incoming photos for event creation
+ */
+eventsComposer.on("message:photo", async (ctx) => {
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+
+  const session = userSessions.get(telegramId);
+  if (!session || session.step !== WizardStep.AWAITING_PHOTO) return;
+
+  const photos = ctx.message.photo;
+  const highestResPhoto = photos[photos.length - 1];
+  session.photoId = highestResPhoto.file_id;
+
+  await ctx.reply("📸 Photo attached!");
+
+  // Proceed to Color or Priority
+  await proceedAfterPhoto(ctx, telegramId, session);
+});

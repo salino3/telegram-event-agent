@@ -4,6 +4,7 @@ export enum WizardStep {
   AWAITING_TITLE = "AWAITING_TITLE",
   AWAITING_DESCRIPTION = "AWAITING_DESCRIPTION",
   AWAITING_LOCATION = "AWAITING_LOCATION",
+  AWAITING_PHOTO = "AWAITING_PHOTO",
   AWAITING_COLOR = "AWAITING_COLOR",
   AWAITING_PRIORITY = "AWAITING_PRIORITY",
   AWAITING_DATE = "AWAITING_DATE",
@@ -33,6 +34,7 @@ export interface UserSessionProps {
   priority?: PriorityType;
   startDate?: Date;
   durationMinutes?: number;
+  photoId?: string;
 }
 
 export type TextContextType = Filter<Context, "message:text">;
