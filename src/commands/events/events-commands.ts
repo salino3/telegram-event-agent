@@ -11,6 +11,7 @@ import {
   proceedAfterLocation,
   proceedAfterPhoto,
   saveEventUpdate,
+  sendUpdatedEventCard,
 } from "./events-utils.js";
 import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
 import {
@@ -400,10 +401,43 @@ eventsComposer.callbackQuery(
 );
 
 /**
+ * Callback Query: Main "Edit" button on event card
+ */
+eventsComposer.callbackQuery(
+  /^edit_event_(\d+)$/,
+  async (ctx: CallbackQueryContext<Context>) => {
+    const eventId = ctx.match[1];
+    const telegramId = ctx.from.id;
+
+    // Ensure user session exists when opening the edit menu
+    if (!userSessions.has(telegramId)) {
+      userSessions.set(telegramId, { step: WizardStep.AWAITING_EDIT_VALUE });
+    }
+
+    await ctx.answerCallbackQuery();
+
+    const editMenuKeyboard = new InlineKeyboard()
+      .text("📌 Title", `edit_field_title_${eventId}`)
+      .text("📄 Description", `edit_field_description_${eventId}`)
+      .row()
+      .text("📍 Location", `edit_field_location_${eventId}`)
+      .text("🚨 Priority", `edit_field_priority_${eventId}`)
+      .row()
+      .text("📆 Start Time", `edit_field_start_time_${eventId}`)
+      .text("🖼️ Image/Media", `edit_field_photo_${eventId}`);
+
+    await ctx.reply("✏️ **Which field would you like to edit?**", {
+      reply_markup: editMenuKeyboard,
+      parse_mode: "Markdown",
+    });
+  },
+);
+
+/**
  * Callback Query: Trigger Edit Wizard (Select Field to Modify)
  */
 eventsComposer.callbackQuery(
-  /^edit_field_(title|description|location|priority|start_time)_(\d+)$/,
+  /^edit_field_(title|description|location|priority|start_time|photo)_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
     const field = ctx.match[1] as EditingFieldType;
     const eventId = parseInt(ctx.match[2], 10);
@@ -436,7 +470,7 @@ eventsComposer.callbackQuery(
       return;
     }
 
-    // Prompt the user for text input based on the chosen field
+    // Prompt the user for input based on the chosen field
     const prompts: Record<EditingFieldType, string> = {
       title: "📌 Enter the new <b>title</b>:",
       description: "📄 Enter the new <b>description</b>:",
@@ -444,85 +478,7 @@ eventsComposer.callbackQuery(
       priority: "",
       start_time:
         "📆 Enter the new start date and time (Format: <b>DD-MM-YYYY HH:MM</b>):",
-    };
-
-    await ctx.reply(prompts[field], { parse_mode: "HTML" });
-  },
-);
-
-/**
- * Callback Query: Main "Edit" button on event card
- */
-eventsComposer.callbackQuery(
-  /^edit_event_(\d+)$/,
-  async (ctx: CallbackQueryContext<Context>) => {
-    const eventId = ctx.match[1];
-    const telegramId = ctx.from.id;
-
-    // Ensure user session exists when opening the edit menu
-    if (!userSessions.has(telegramId)) {
-      userSessions.set(telegramId, { step: WizardStep.AWAITING_EDIT_VALUE });
-    }
-
-    await ctx.answerCallbackQuery();
-
-    const editMenuKeyboard = new InlineKeyboard()
-      .text("📌 Title", `edit_field_title_${eventId}`)
-      .text("📄 Description", `edit_field_description_${eventId}`)
-      .row()
-      .text("📍 Location", `edit_field_location_${eventId}`)
-      .text("🚨 Priority", `edit_field_priority_${eventId}`)
-      .row()
-      .text("📆 Start Time", `edit_field_start_time_${eventId}`);
-
-    await ctx.reply("✏️ **Which field would you like to edit?**", {
-      reply_markup: editMenuKeyboard,
-      parse_mode: "Markdown",
-    });
-  },
-);
-
-/**
- * Callback Query: Trigger Edit Wizard (Select Field to Modify)
- */
-eventsComposer.callbackQuery(
-  /^edit_field_(title|description|location|priority|start_time)_(\d+)$/,
-  async (ctx: CallbackQueryContext<Context>) => {
-    const field = ctx.match[1] as EditingFieldType;
-    const eventId = parseInt(ctx.match[2], 10);
-    const telegramId = ctx.from.id;
-
-    const session = userSessions.get(telegramId);
-    if (!session) return;
-
-    // Store targeted field & event ID in user session state
-    session.editingEventId = eventId;
-    session.editingField = field;
-    session.step = WizardStep.AWAITING_EDIT_VALUE;
-
-    await ctx.answerCallbackQuery();
-
-    // If editing priority, display the button keyboard directly
-    if (field === "priority") {
-      const priorityKeyboard = new InlineKeyboard()
-        .text("🟢 Low", "update_priority_low")
-        .text("🟡 Medium", "update_priority_medium")
-        .text("🔴 High", "update_priority_high");
-
-      await ctx.reply("🚨 Select the new priority level:", {
-        reply_markup: priorityKeyboard,
-      });
-      return;
-    }
-
-    // Prompt the user for text input based on the chosen field
-    const prompts: Record<EditingFieldType, string> = {
-      title: "📌 Enter the new <b>title</b>:",
-      description: "📄 Enter the new <b>description</b>:",
-      location: "📍 Enter the new <b>location</b>:",
-      priority: "",
-      start_time:
-        "📆 Enter the new start date and time (Format: <b>DD-MM-YYYY HH:MM</b>):",
+      photo: "📸 Send a new <b>photo/image</b> to update this event:",
     };
 
     await ctx.reply(prompts[field], { parse_mode: "HTML" });
@@ -783,21 +739,70 @@ eventsComposer.callbackQuery(
 );
 
 /**
- * Handle incoming photos for event creation
+ * Handle incoming photos for both Event Creation and Event Editing
  */
 eventsComposer.on("message:photo", async (ctx) => {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 
   const session = userSessions.get(telegramId);
-  if (!session || session.step !== WizardStep.AWAITING_PHOTO) return;
+  if (!session) return;
 
+  // Extract highest resolution photo file_id
   const photos = ctx.message.photo;
   const highestResPhoto = photos[photos.length - 1];
-  session.photoId = highestResPhoto.file_id;
+  const photoFileId = highestResPhoto.file_id;
 
-  await ctx.reply("📸 Photo attached!");
+  // 1. EVENT CREATION WIZARD FLOW
+  if (session.step === WizardStep.AWAITING_PHOTO) {
+    session.photoId = photoFileId;
+    await ctx.reply("📸 Photo attached!");
+    await proceedAfterPhoto(ctx, telegramId, session);
+    return;
+  }
 
-  // Proceed to Color or Priority
-  await proceedAfterPhoto(ctx, telegramId, session);
+  // 2. EVENT EDITING FLOW
+  if (
+    session.step === WizardStep.AWAITING_EDIT_VALUE &&
+    session.editingField === "photo" &&
+    session.editingEventId
+  ) {
+    const eventId = session.editingEventId;
+
+    try {
+      // Get creator's database account ID
+      const accRes = await query(
+        "SELECT id FROM accounts WHERE telegram_id = $1",
+        [telegramId],
+      );
+      if (accRes.rows.length === 0) return;
+      const creatorId = accRes.rows[0].id;
+
+      // Insert or update new photo attachment
+      await query(
+        `INSERT INTO event_attachments (event_id, uploaded_by, file_type, content)
+         VALUES ($1, $2, 'photo', $3)
+         ON CONFLICT (event_id, file_type) 
+         DO UPDATE SET 
+           content = EXCLUDED.content,
+           uploaded_by = EXCLUDED.uploaded_by,
+           created_at = CURRENT_TIMESTAMP;`,
+        [eventId, creatorId, photoFileId],
+      );
+
+      // Clean up user session
+      userSessions.delete(telegramId);
+
+      // Refresh event card in-place with success message
+      await sendUpdatedEventCard(
+        ctx,
+        eventId,
+        "✅ <b>[Photo/Image] updated successfully!</b>\n\n",
+      );
+    } catch (error) {
+      console.error("Error updating event image:", error);
+      await ctx.reply("❌ Failed to update image in database.");
+    }
+    return;
+  }
 });

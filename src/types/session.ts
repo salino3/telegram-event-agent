@@ -21,7 +21,8 @@ export type EditingFieldType =
   | "description"
   | "location"
   | "priority"
-  | "start_time";
+  | "start_time"
+  | "photo";
 
 export interface UserSessionProps {
   step: WizardStep;

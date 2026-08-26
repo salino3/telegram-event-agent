@@ -158,6 +158,7 @@ export async function saveEventUpdate(
       location: "Location",
       priority: "Priority",
       start_time: "Start Time",
+      photo: "Photo/Image",
     };
 
     await sendUpdatedEventCard(
