@@ -21,12 +21,13 @@ app.get("/auth/google/callback", async (req, res) => {
       return res.status(400).send("Missing code or state parameter.");
     }
 
-    const telegramId = String(state); // Coincide con la string plana del state
+    const telegramId = String(state); // Matches the state string passed in OAuth URL
 
-    // 1. Get Google tokens
+    // 1. Retrieve Google OAuth tokens
     const { tokens } = await oauth2Client.getToken(code as string);
     oauth2Client.setCredentials(tokens);
 
+    // 2. Retrieve user email from Google UserInfo endpoint
     const userInfoResponse = await oauth2Client.request<{ email?: string }>({
       url: "https://www.googleapis.com/oauth2/v2/userinfo",
     });
@@ -37,43 +38,51 @@ app.get("/auth/google/callback", async (req, res) => {
       throw new Error("Could not retrieve email from Google.");
     }
 
-    // 3. Buscar o crear cuenta de usuario
-    let accountRes = await query(
-      "SELECT id FROM accounts WHERE telegram_id = $1",
-      [telegramId],
-    );
-
-    let accountId: number;
-
-    if (accountRes.rows.length === 0) {
-      const newAccountRes = await query(
-        `INSERT INTO accounts (telegram_id, first_name)
-         VALUES ($1, $2)
-         RETURNING id`,
-        [telegramId, "Telegram User"],
-      );
-      accountId = newAccountRes.rows[0].id;
-    } else {
-      accountId = accountRes.rows[0].id;
-    }
-
-    // 4. Guardar o actualizar credenciales en DB (google_accounts)
-    await query(
-      `INSERT INTO google_accounts (account_id, email, access_token, refresh_token, is_default)
-       VALUES ($1, $2, $3, $4, TRUE)
+    // 3. Atomically upsert account, calculate default flag, and save google_account
+    const dbRes = await query(
+      `WITH target_account AS (
+         INSERT INTO accounts (telegram_id, first_name)
+         VALUES ($1, 'Telegram User')
+         ON CONFLICT (telegram_id) DO UPDATE 
+           SET telegram_id = EXCLUDED.telegram_id
+         RETURNING id
+       ),
+       default_check AS (
+         SELECT NOT EXISTS (
+           SELECT 1 FROM google_accounts 
+           WHERE account_id = (SELECT id FROM target_account) 
+             AND is_default = TRUE
+         ) AS should_be_default
+       )
+       INSERT INTO google_accounts (account_id, email, access_token, refresh_token, is_default)
+       SELECT 
+         ta.id, 
+         $2, 
+         $3, 
+         $4, 
+         dc.should_be_default
+       FROM target_account ta, default_check dc
        ON CONFLICT (account_id, email) 
        DO UPDATE SET 
          access_token = EXCLUDED.access_token,
          refresh_token = COALESCE(EXCLUDED.refresh_token, google_accounts.refresh_token),
-         updated_at = CURRENT_TIMESTAMP`,
-      [accountId, userEmail, tokens.access_token, tokens.refresh_token],
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING is_default;`,
+      [telegramId, userEmail, tokens.access_token, tokens.refresh_token],
     );
 
-    // 5. Notificar al usuario por Telegram
+    const isDefault = dbRes.rows[0]?.is_default ?? false;
+
+    // 4. Notify user via Telegram
+    const statusText = isDefault
+      ? "🌟 Set as your default calendar."
+      : "ℹ️ Linked as an additional account.";
+
     await bot.api.sendMessage(
       telegramId,
       `✅ <b>Account linked successfully!</b>\n\n` +
-        `Email: <code>${userEmail}</code>`,
+        `Email: <code>${userEmail}</code>\n` +
+        `${statusText}`,
       { parse_mode: "HTML" },
     );
 
