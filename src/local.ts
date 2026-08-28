@@ -106,6 +106,7 @@ async function main() {
   // Register bot commands in Telegram
   await bot.api.setMyCommands([
     { command: "start", description: "Initialize user session" },
+    { command: "accounts", description: "Your list accounts" },
     {
       command: "connect_google",
       description: "Connect your Google Calendar account",

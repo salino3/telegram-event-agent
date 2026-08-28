@@ -51,10 +51,10 @@ export async function createGoogleCalendarEvent(
     const fullDescription =
       `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
 
-    // Pass auth directly in the API call using 'auth: oauth2Client as any'
+    // Pass auth directly in the API call using target email instead of "primary"
     const response = await calendarClient.events.insert({
       auth: oauth2Client as any,
-      calendarId: "primary",
+      calendarId: email, // Targeted specifically to default linked email
       requestBody: {
         summary: input.title,
         description: fullDescription,
@@ -65,7 +65,7 @@ export async function createGoogleCalendarEvent(
       },
     });
 
-    // Modify the URL by adding 'authuser' so that it opens the correct account.
+    // Append authuser to direct link for easy viewing in web browser
     const rawLink = response.data.htmlLink || null;
     const directLink = rawLink
       ? `${rawLink}&authuser=${encodeURIComponent(email)}`

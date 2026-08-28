@@ -1,6 +1,7 @@
 import { Bot } from "grammy";
 import { startComposer } from "./commands/start.commands.js";
 import { eventsComposer } from "./commands/events/events-commands.js";
+import { accountsComposer } from "./commands/accounts/accounts-commands.js";
 import { googleAuthComposer } from "./commands/google.commands.js";
 import { TELEGRAM_BOT_TOKEN } from "./constants.js";
 
@@ -12,6 +13,7 @@ if (!token) {
 export const bot = new Bot(token);
 
 // Register command composers
+bot.use(accountsComposer);
 bot.use(googleAuthComposer);
 bot.use(startComposer);
 bot.use(eventsComposer);

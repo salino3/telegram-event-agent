@@ -592,7 +592,8 @@ async function handleTextMessage(ctx: TextContextType) {
 
   // 5. STEP: DURATION & SAVE EVENT CREATION
   if (session.step === WizardStep.AWAITING_DURATION) {
-    const durationInput = parseInt(ctx.message.text, 10);
+    const rawInput = ctx.message?.text?.trim();
+    const durationInput = rawInput ? parseInt(rawInput, 10) : NaN;
 
     if (isNaN(durationInput) || durationInput <= 0) {
       await ctx.reply(
@@ -617,7 +618,7 @@ async function handleTextMessage(ctx: TextContextType) {
       }
       const creatorId = accountRes.rows[0].id;
 
-      // Create event in Google Calendar API
+      // Create event in Google Calendar API using default account
       const { id: googleEventId, htmlLink: googleEventUrl } =
         await createGoogleCalendarEvent({
           telegramId,
@@ -625,6 +626,7 @@ async function handleTextMessage(ctx: TextContextType) {
           description: session.description,
           location: session.location,
           colorId: session.colorId,
+          priority: session.priority,
           startTime,
           endTime,
         });
@@ -655,7 +657,7 @@ async function handleTextMessage(ctx: TextContextType) {
       if (session.photoId && createdEventId) {
         await query(
           `INSERT INTO event_attachments (event_id, uploaded_by, file_type, content)
-     VALUES ($1, $2, 'photo', $3)`,
+           VALUES ($1, $2, 'photo', $3)`,
           [createdEventId, creatorId, session.photoId],
         );
       }
@@ -718,8 +720,6 @@ async function handleTextMessage(ctx: TextContextType) {
   }
 }
 
-eventsComposer.on("message:text", handleTextMessage);
-
 /**
  * Callback Query: Skip Photo Upload
  */
@@ -737,6 +737,8 @@ eventsComposer.callbackQuery(
     await proceedAfterPhoto(ctx, telegramId, session);
   },
 );
+
+eventsComposer.on("message:text", handleTextMessage);
 
 /**
  * Handle incoming photos for both Event Creation and Event Editing
