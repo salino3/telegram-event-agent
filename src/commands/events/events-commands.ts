@@ -271,10 +271,19 @@ eventsComposer.callbackQuery(
     const eventId = ctx.match[1];
 
     try {
+      // 1. Join with google_accounts to fetch email (with default account fallback)
       const result = await query(
-        `SELECT e.id, e.title, e.priority, e.start_time, e.end_time, e.description, e.location,
-                (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id
-         FROM events e WHERE e.id = $1`,
+        `SELECT 
+           e.id, e.title, e.priority, e.start_time, e.end_time, e.description, e.location,
+           ga.email,
+           (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id
+         FROM events e
+         LEFT JOIN google_accounts ga 
+           ON ga.id = COALESCE(
+             e.google_account_id, 
+             (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+           )
+         WHERE e.id = $1`,
         [eventId],
       );
 
@@ -290,8 +299,15 @@ eventsComposer.callbackQuery(
       const priorityKey = (evt.priority as string).toLowerCase();
       const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
 
+      // 2. Format Organizer email line
+      const emailLine = `📧 <b>Organizer: <code>${
+        evt.email ? escapeHtml(evt.email) : "No Calendar Linked"
+      }</code></b>\n`;
+
+      // 3. Assemble captionText with Organizer email placed under the title
       const captionText =
-        `📌 <b>${escapeHtml(evt.title)}</b>\n\n` +
+        `📌 <b>${escapeHtml(evt.title)}</b>\n` +
+        `${emailLine}\n` +
         `🚨 <b>Priority:</b> ${emoji} ${evt.priority.toUpperCase()}\n` +
         `📅 <b>Date:</b> ${formattedStartDate}\n` +
         `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
