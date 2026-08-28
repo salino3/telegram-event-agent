@@ -4,7 +4,7 @@ import { query } from "../../db.js";
 import { userSessions } from "../../session/store.js";
 import {
   createGoogleCalendarEvent,
-  deleteGoogleCalendarEvent,
+  deleteGoogleCalendarEventDirect,
 } from "../../services/google-calendar.js";
 import { utilitiesApp } from "../../utils/utilities-app.js";
 import {
@@ -318,7 +318,7 @@ eventsComposer.callbackQuery(
 );
 
 /**
- * Callback Query: Delete Event directly by ID
+ * Callback Query: Delete Event safely across multiple devices
  */
 eventsComposer.callbackQuery(
   /^delete_event_(\d+)$/,
@@ -327,37 +327,47 @@ eventsComposer.callbackQuery(
     const telegramId = ctx.from.id;
 
     try {
-      // 1. Fetch Google Event ID before deleting from DB
-      const evtRes = await query(
-        `SELECT google_event_id FROM events 
-         WHERE id = $1 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)`,
-        [eventId, telegramId],
+      // Single Atomic SQL Sentence: Deletes attachments & event, returning Google Sync details
+      const deleteRes = await query(
+        `WITH deleted_attachments AS (
+           DELETE FROM event_attachments
+           WHERE event_id = $1
+         ),
+         deleted_event AS (
+           DELETE FROM events
+           WHERE id = $1 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)
+           RETURNING google_event_id, google_account_id
+         )
+         SELECT 
+           de.google_event_id, 
+           ga.access_token, 
+           ga.refresh_token, 
+           ga.email
+         FROM deleted_event de
+         JOIN google_accounts ga ON de.google_account_id = ga.id`,
+        [eventId, String(telegramId)],
       );
 
-      if (evtRes.rows.length === 0) {
+      // If no rows were returned, another device already deleted this event (Race condition prevented!)
+      if (deleteRes.rows.length === 0) {
         await ctx.answerCallbackQuery({
           text: "Event not found or already deleted.",
         });
         return;
       }
 
-      const googleEventId = evtRes.rows[0].google_event_id;
+      // Extract credentials returned directly by the single DB query
+      const { google_event_id, access_token, refresh_token, email } =
+        deleteRes.rows[0];
 
-      // 2. Delete associated attachments first if cascade isn't set
-      await query(`DELETE FROM event_attachments WHERE event_id = $1`, [
-        eventId,
-      ]);
-
-      // 3. Delete the event from PostgreSQL
-      await query(
-        `DELETE FROM events 
-         WHERE id = $1 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)`,
-        [eventId, telegramId],
-      );
-
-      // 4. Delete from Google Calendar if synced
-      if (googleEventId) {
-        await deleteGoogleCalendarEvent(telegramId, googleEventId);
+      // Delete from Google Calendar if synced (using the specific returned account tokens)
+      if (google_event_id && access_token) {
+        await deleteGoogleCalendarEventDirect({
+          googleEventId: google_event_id,
+          accessToken: access_token,
+          refreshToken: refresh_token,
+          email: email,
+        });
       }
 
       await ctx.answerCallbackQuery({ text: "🗑️ Event deleted successfully!" });
@@ -619,17 +629,20 @@ async function handleTextMessage(ctx: TextContextType) {
       const creatorId = accountRes.rows[0].id;
 
       // Create event in Google Calendar API using default account
-      const { id: googleEventId, htmlLink: googleEventUrl } =
-        await createGoogleCalendarEvent({
-          telegramId,
-          title: session.title!,
-          description: session.description,
-          location: session.location,
-          colorId: session.colorId,
-          priority: session.priority,
-          startTime,
-          endTime,
-        });
+      const {
+        id: googleEventId,
+        htmlLink: googleEventUrl,
+        googleAccountId,
+      } = await createGoogleCalendarEvent({
+        telegramId,
+        title: session.title!,
+        description: session.description,
+        location: session.location,
+        colorId: session.colorId,
+        priority: session.priority,
+        startTime,
+        endTime,
+      });
 
       const priorityValue = (session.priority || "medium").toLowerCase();
       const priorityEmoji = PRIORITY_EMOJIS[priorityValue] || "🟡";
@@ -637,8 +650,9 @@ async function handleTextMessage(ctx: TextContextType) {
 
       // Persist to Database
       const eventInsertRes = await query(
-        `INSERT INTO events (creator_id, title, description, location, priority, start_time, end_time, google_event_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+        `INSERT INTO events (creator_id, title, description, location,
+         priority, start_time, end_time, google_event_id, google_account_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
            RETURNING id`,
         [
           creatorId,
@@ -649,6 +663,7 @@ async function handleTextMessage(ctx: TextContextType) {
           startTime.toISOString(),
           endTime.toISOString(),
           googleEventId,
+          googleAccountId,
         ],
       );
 

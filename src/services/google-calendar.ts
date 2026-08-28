@@ -30,10 +30,15 @@ export interface UpdateEventInput {
 
 export async function createGoogleCalendarEvent(
   input: CreateEventInput,
-): Promise<{ id: string | null; htmlLink: string | null }> {
+): Promise<{
+  id: string | null;
+  htmlLink: string | null;
+  googleAccountId: number | null;
+}> {
   try {
+    // 1. Fetch ga.id along with access_token, refresh_token, and email
     const dbRes = await query(
-      `SELECT ga.access_token, ga.refresh_token, ga.email 
+      `SELECT ga.id as google_account_id, ga.access_token, ga.refresh_token, ga.email 
        FROM google_accounts ga
        JOIN accounts a ON ga.account_id = a.id
        WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
@@ -41,20 +46,20 @@ export async function createGoogleCalendarEvent(
     );
 
     if (dbRes.rows.length === 0) {
-      return { id: null, htmlLink: null };
+      return { id: null, htmlLink: null, googleAccountId: null };
     }
 
-    const { access_token, refresh_token, email } = dbRes.rows[0];
+    const { google_account_id, access_token, refresh_token, email } =
+      dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
     const priorityLabel = (input.priority || "medium").toUpperCase();
     const fullDescription =
       `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
 
-    // Pass auth directly in the API call using target email instead of "primary"
     const response = await calendarClient.events.insert({
       auth: oauth2Client as any,
-      calendarId: email, // Targeted specifically to default linked email
+      calendarId: email,
       requestBody: {
         summary: input.title,
         description: fullDescription,
@@ -65,19 +70,20 @@ export async function createGoogleCalendarEvent(
       },
     });
 
-    // Append authuser to direct link for easy viewing in web browser
     const rawLink = response.data.htmlLink || null;
     const directLink = rawLink
       ? `${rawLink}&authuser=${encodeURIComponent(email)}`
       : null;
 
+    // 2. Return googleAccountId alongside id and htmlLink
     return {
       id: response.data.id || null,
       htmlLink: directLink,
+      googleAccountId: google_account_id,
     };
   } catch (error) {
     console.error("Error creating Google Calendar event:", error);
-    return { id: null, htmlLink: null };
+    return { id: null, htmlLink: null, googleAccountId: null };
   }
 }
 
@@ -143,28 +149,64 @@ export async function updateGoogleCalendarEvent(
 }
 
 //
-export async function deleteGoogleCalendarEvent(
+async function deleteGoogleCalendarEvent(
   telegramId: number,
-  googleEventId: string,
+  eventId: number,
 ): Promise<boolean> {
   try {
+    // 1. Fetch tokens and email associated specifically with the event's owner account
     const dbRes = await query(
-      `SELECT ga.access_token, ga.refresh_token 
-       FROM google_accounts ga
-       JOIN accounts a ON ga.account_id = a.id
-       WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
-      [String(telegramId)],
+      `SELECT ga.access_token, ga.refresh_token, ga.email, e.google_event_id
+       FROM events e
+       JOIN google_accounts ga ON e.google_account_id = ga.id
+       JOIN accounts a ON e.creator_id = a.id
+       WHERE a.telegram_id = $1 AND e.id = $2`,
+      [String(telegramId), eventId],
     );
 
-    if (dbRes.rows.length === 0) return false;
+    if (dbRes.rows.length === 0 || !dbRes.rows[0].google_event_id) {
+      return false;
+    }
 
-    const { access_token, refresh_token } = dbRes.rows[0];
+    const { access_token, refresh_token, email, google_event_id } =
+      dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
+
+    // 2. Target the specific email calendar that owns the event
+    await calendarClient.events.delete({
+      auth: oauth2Client as any,
+      calendarId: email,
+      eventId: google_event_id,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error deleting Google Calendar event:", error);
+    return false;
+  }
+}
+
+//
+interface DirectDeleteParams {
+  googleEventId: string;
+  accessToken: string;
+  refreshToken: string;
+  email: string;
+}
+
+export async function deleteGoogleCalendarEventDirect(
+  params: DirectDeleteParams,
+): Promise<boolean> {
+  try {
+    oauth2Client.setCredentials({
+      access_token: params.accessToken,
+      refresh_token: params.refreshToken,
+    });
 
     await calendarClient.events.delete({
       auth: oauth2Client as any,
-      calendarId: "primary",
-      eventId: googleEventId,
+      calendarId: params.email, // Deletes explicitly from the owning Google Account calendar
+      eventId: params.googleEventId,
     });
 
     return true;
