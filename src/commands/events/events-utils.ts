@@ -132,10 +132,11 @@ export async function saveEventUpdate(
       return;
     }
 
-    // Sync to Google Calendar
+    // Sync to Google Calendar target account
     if (updatedEvt.google_event_id) {
       await updateGoogleCalendarEvent({
         telegramId,
+        eventId, // Pass database eventId so tokens for the correct owning account are queried
         googleEventId: updatedEvt.google_event_id,
         title: updatedEvt.title,
         description: updatedEvt.description,
