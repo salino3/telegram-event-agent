@@ -300,7 +300,7 @@ eventsComposer.callbackQuery(
       const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
 
       // 2. Format Organizer email line
-      const emailLine = `📧 <b>Organizer: <code>${
+      const emailLine = `📬 <b>Saved To: <code>${
         evt.email ? escapeHtml(evt.email) : "No Calendar Linked"
       }</code></b>\n`;
 
@@ -702,7 +702,7 @@ async function handleTextMessage(ctx: TextContextType) {
         ? `\n\n🔗 <a href="${googleEventUrl}">View in Google Calendar</a>`
         : "";
 
-      const emailLine = `📧 <b>Organizer: <code>${
+      const emailLine = `📬 <b>Saved To: <code>${
         googleEmail ? escapeHtml(googleEmail) : "No Calendar Linked"
       }</code></b>\n`;
 

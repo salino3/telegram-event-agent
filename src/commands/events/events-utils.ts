@@ -217,7 +217,7 @@ export async function sendUpdatedEventCard(
     const formattedDate = startDate.toLocaleString();
 
     // 2. Format the Email badge line (grey/code style)
-    const emailLine = `📧 <b>Organizer: <code>${
+    const emailLine = `📬 <b>Saved To: <code>${
       evt.email ? escapeHtml(evt.email) : "No Calendar Linked"
     }</code></b>\n`;
 
