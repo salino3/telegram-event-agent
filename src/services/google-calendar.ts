@@ -18,6 +18,7 @@ export interface CreateEventInput {
 
 export interface UpdateEventInput {
   telegramId: number;
+  eventId: number;
   googleEventId: string;
   title?: string;
   description?: string;
@@ -28,12 +29,26 @@ export interface UpdateEventInput {
   endTime?: Date;
 }
 
+//
+interface DirectDeleteParams {
+  googleEventId: string;
+  accessToken: string;
+  refreshToken: string;
+  email: string;
+}
+
 export async function createGoogleCalendarEvent(
   input: CreateEventInput,
-): Promise<{ id: string | null; htmlLink: string | null }> {
+): Promise<{
+  id: string | null;
+  htmlLink: string | null;
+  googleAccountId: number | null;
+  googleEmail: string | null;
+}> {
   try {
+    // 1. Fetch ga.id along with access_token, refresh_token, and email
     const dbRes = await query(
-      `SELECT ga.access_token, ga.refresh_token, ga.email 
+      `SELECT ga.id as google_account_id, ga.access_token, ga.refresh_token, ga.email 
        FROM google_accounts ga
        JOIN accounts a ON ga.account_id = a.id
        WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
@@ -41,20 +56,25 @@ export async function createGoogleCalendarEvent(
     );
 
     if (dbRes.rows.length === 0) {
-      return { id: null, htmlLink: null };
+      return {
+        id: null,
+        htmlLink: null,
+        googleAccountId: null,
+        googleEmail: null,
+      };
     }
 
-    const { access_token, refresh_token, email } = dbRes.rows[0];
+    const { google_account_id, access_token, refresh_token, email } =
+      dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
     const priorityLabel = (input.priority || "medium").toUpperCase();
     const fullDescription =
       `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
 
-    // Pass auth directly in the API call using 'auth: oauth2Client as any'
     const response = await calendarClient.events.insert({
       auth: oauth2Client as any,
-      calendarId: "primary",
+      calendarId: email,
       requestBody: {
         summary: input.title,
         description: fullDescription,
@@ -65,19 +85,26 @@ export async function createGoogleCalendarEvent(
       },
     });
 
-    // Modify the URL by adding 'authuser' so that it opens the correct account.
     const rawLink = response.data.htmlLink || null;
     const directLink = rawLink
       ? `${rawLink}&authuser=${encodeURIComponent(email)}`
       : null;
 
+    // 2. Return googleAccountId alongside id and htmlLink
     return {
       id: response.data.id || null,
       htmlLink: directLink,
+      googleAccountId: google_account_id,
+      googleEmail: email,
     };
   } catch (error) {
     console.error("Error creating Google Calendar event:", error);
-    return { id: null, htmlLink: null };
+    return {
+      id: null,
+      htmlLink: null,
+      googleAccountId: null,
+      googleEmail: null,
+    };
   }
 }
 
@@ -86,17 +113,23 @@ export async function updateGoogleCalendarEvent(
   input: UpdateEventInput,
 ): Promise<boolean> {
   try {
+    // Fetch target Google account credentials specifically linked to this event (with fallback to default)
     const dbRes = await query(
-      `SELECT ga.access_token, ga.refresh_token 
-       FROM google_accounts ga
-       JOIN accounts a ON ga.account_id = a.id
-       WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
-      [String(input.telegramId)],
+      `SELECT ga.access_token, ga.refresh_token, ga.email 
+       FROM events e
+       LEFT JOIN google_accounts ga 
+         ON ga.id = COALESCE(
+           e.google_account_id, 
+           (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+         )
+       JOIN accounts a ON e.creator_id = a.id
+       WHERE a.telegram_id = $1 AND e.id = $2`,
+      [String(input.telegramId), input.eventId],
     );
 
-    if (dbRes.rows.length === 0) return false;
+    if (dbRes.rows.length === 0 || !dbRes.rows[0].access_token) return false;
 
-    const { access_token, refresh_token } = dbRes.rows[0];
+    const { access_token, refresh_token, email } = dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
     // Detect system/server timezone or default to local environment
@@ -128,9 +161,10 @@ export async function updateGoogleCalendarEvent(
       };
     }
 
+    // Patch event directly on the specific email calendar that owns the event
     await calendarClient.events.patch({
       auth: oauth2Client as any,
-      calendarId: "primary",
+      calendarId: email,
       eventId: input.googleEventId,
       requestBody,
     });
@@ -143,28 +177,19 @@ export async function updateGoogleCalendarEvent(
 }
 
 //
-export async function deleteGoogleCalendarEvent(
-  telegramId: number,
-  googleEventId: string,
+export async function deleteGoogleCalendarEventDirect(
+  params: DirectDeleteParams,
 ): Promise<boolean> {
   try {
-    const dbRes = await query(
-      `SELECT ga.access_token, ga.refresh_token 
-       FROM google_accounts ga
-       JOIN accounts a ON ga.account_id = a.id
-       WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
-      [String(telegramId)],
-    );
-
-    if (dbRes.rows.length === 0) return false;
-
-    const { access_token, refresh_token } = dbRes.rows[0];
-    oauth2Client.setCredentials({ access_token, refresh_token });
+    oauth2Client.setCredentials({
+      access_token: params.accessToken,
+      refresh_token: params.refreshToken,
+    });
 
     await calendarClient.events.delete({
       auth: oauth2Client as any,
-      calendarId: "primary",
-      eventId: googleEventId,
+      calendarId: params.email, // Deletes explicitly from the owning Google Account calendar
+      eventId: params.googleEventId,
     });
 
     return true;

@@ -4,7 +4,7 @@ import { query } from "../../db.js";
 import { userSessions } from "../../session/store.js";
 import {
   createGoogleCalendarEvent,
-  deleteGoogleCalendarEvent,
+  deleteGoogleCalendarEventDirect,
 } from "../../services/google-calendar.js";
 import { utilitiesApp } from "../../utils/utilities-app.js";
 import {
@@ -271,10 +271,19 @@ eventsComposer.callbackQuery(
     const eventId = ctx.match[1];
 
     try {
+      // 1. Join with google_accounts to fetch email (with default account fallback)
       const result = await query(
-        `SELECT e.id, e.title, e.priority, e.start_time, e.end_time, e.description, e.location,
-                (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id
-         FROM events e WHERE e.id = $1`,
+        `SELECT 
+           e.id, e.title, e.priority, e.start_time, e.end_time, e.description, e.location,
+           ga.email,
+           (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id
+         FROM events e
+         LEFT JOIN google_accounts ga 
+           ON ga.id = COALESCE(
+             e.google_account_id, 
+             (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+           )
+         WHERE e.id = $1`,
         [eventId],
       );
 
@@ -290,8 +299,15 @@ eventsComposer.callbackQuery(
       const priorityKey = (evt.priority as string).toLowerCase();
       const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
 
+      // 2. Format Organizer email line
+      const emailLine = `📬 <b>Saved To: <code>${
+        evt.email ? escapeHtml(evt.email) : "No Calendar Linked"
+      }</code></b>\n`;
+
+      // 3. Assemble captionText with Organizer email placed under the title
       const captionText =
-        `📌 <b>${escapeHtml(evt.title)}</b>\n\n` +
+        `📌 <b>${escapeHtml(evt.title)}</b>\n` +
+        `${emailLine}\n` +
         `🚨 <b>Priority:</b> ${emoji} ${evt.priority.toUpperCase()}\n` +
         `📅 <b>Date:</b> ${formattedStartDate}\n` +
         `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
@@ -318,7 +334,7 @@ eventsComposer.callbackQuery(
 );
 
 /**
- * Callback Query: Delete Event directly by ID
+ * Callback Query: Delete Event safely across multiple devices
  */
 eventsComposer.callbackQuery(
   /^delete_event_(\d+)$/,
@@ -327,37 +343,47 @@ eventsComposer.callbackQuery(
     const telegramId = ctx.from.id;
 
     try {
-      // 1. Fetch Google Event ID before deleting from DB
-      const evtRes = await query(
-        `SELECT google_event_id FROM events 
-         WHERE id = $1 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)`,
-        [eventId, telegramId],
+      // Single Atomic SQL Sentence: Deletes attachments & event, returning Google Sync details
+      const deleteRes = await query(
+        `WITH deleted_attachments AS (
+           DELETE FROM event_attachments
+           WHERE event_id = $1
+         ),
+         deleted_event AS (
+           DELETE FROM events
+           WHERE id = $1 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)
+           RETURNING google_event_id, google_account_id
+         )
+         SELECT 
+           de.google_event_id, 
+           ga.access_token, 
+           ga.refresh_token, 
+           ga.email
+         FROM deleted_event de
+         JOIN google_accounts ga ON de.google_account_id = ga.id`,
+        [eventId, String(telegramId)],
       );
 
-      if (evtRes.rows.length === 0) {
+      // If no rows were returned, another device already deleted this event (Race condition prevented!)
+      if (deleteRes.rows.length === 0) {
         await ctx.answerCallbackQuery({
           text: "Event not found or already deleted.",
         });
         return;
       }
 
-      const googleEventId = evtRes.rows[0].google_event_id;
+      // Extract credentials returned directly by the single DB query
+      const { google_event_id, access_token, refresh_token, email } =
+        deleteRes.rows[0];
 
-      // 2. Delete associated attachments first if cascade isn't set
-      await query(`DELETE FROM event_attachments WHERE event_id = $1`, [
-        eventId,
-      ]);
-
-      // 3. Delete the event from PostgreSQL
-      await query(
-        `DELETE FROM events 
-         WHERE id = $1 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)`,
-        [eventId, telegramId],
-      );
-
-      // 4. Delete from Google Calendar if synced
-      if (googleEventId) {
-        await deleteGoogleCalendarEvent(telegramId, googleEventId);
+      // Delete from Google Calendar if synced (using the specific returned account tokens)
+      if (google_event_id && access_token) {
+        await deleteGoogleCalendarEventDirect({
+          googleEventId: google_event_id,
+          accessToken: access_token,
+          refreshToken: refresh_token,
+          email: email,
+        });
       }
 
       await ctx.answerCallbackQuery({ text: "🗑️ Event deleted successfully!" });
@@ -592,7 +618,8 @@ async function handleTextMessage(ctx: TextContextType) {
 
   // 5. STEP: DURATION & SAVE EVENT CREATION
   if (session.step === WizardStep.AWAITING_DURATION) {
-    const durationInput = parseInt(ctx.message.text, 10);
+    const rawInput = ctx.message?.text?.trim();
+    const durationInput = rawInput ? parseInt(rawInput, 10) : NaN;
 
     if (isNaN(durationInput) || durationInput <= 0) {
       await ctx.reply(
@@ -617,17 +644,22 @@ async function handleTextMessage(ctx: TextContextType) {
       }
       const creatorId = accountRes.rows[0].id;
 
-      // Create event in Google Calendar API
-      const { id: googleEventId, htmlLink: googleEventUrl } =
-        await createGoogleCalendarEvent({
-          telegramId,
-          title: session.title!,
-          description: session.description,
-          location: session.location,
-          colorId: session.colorId,
-          startTime,
-          endTime,
-        });
+      // Create event in Google Calendar API using default account
+      const {
+        id: googleEventId,
+        htmlLink: googleEventUrl,
+        googleAccountId,
+        googleEmail,
+      } = await createGoogleCalendarEvent({
+        telegramId,
+        title: session.title!,
+        description: session.description,
+        location: session.location,
+        colorId: session.colorId,
+        priority: session.priority,
+        startTime,
+        endTime,
+      });
 
       const priorityValue = (session.priority || "medium").toLowerCase();
       const priorityEmoji = PRIORITY_EMOJIS[priorityValue] || "🟡";
@@ -635,8 +667,9 @@ async function handleTextMessage(ctx: TextContextType) {
 
       // Persist to Database
       const eventInsertRes = await query(
-        `INSERT INTO events (creator_id, title, description, location, priority, start_time, end_time, google_event_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+        `INSERT INTO events (creator_id, title, description, location,
+         priority, start_time, end_time, google_event_id, google_account_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
            RETURNING id`,
         [
           creatorId,
@@ -647,6 +680,7 @@ async function handleTextMessage(ctx: TextContextType) {
           startTime.toISOString(),
           endTime.toISOString(),
           googleEventId,
+          googleAccountId,
         ],
       );
 
@@ -655,7 +689,7 @@ async function handleTextMessage(ctx: TextContextType) {
       if (session.photoId && createdEventId) {
         await query(
           `INSERT INTO event_attachments (event_id, uploaded_by, file_type, content)
-     VALUES ($1, $2, 'photo', $3)`,
+           VALUES ($1, $2, 'photo', $3)`,
           [createdEventId, creatorId, session.photoId],
         );
       }
@@ -668,9 +702,14 @@ async function handleTextMessage(ctx: TextContextType) {
         ? `\n\n🔗 <a href="${googleEventUrl}">View in Google Calendar</a>`
         : "";
 
+      const emailLine = `📬 <b>Saved To: <code>${
+        googleEmail ? escapeHtml(googleEmail) : "No Calendar Linked"
+      }</code></b>\n`;
+
       await ctx.reply(
         `✅ <b>Event Saved!</b>\n\n` +
           `📌 <b>Title:</b> ${escapeHtml(session.title)}\n` +
+          `${emailLine}` +
           `📄 <b>Description:</b> ${escapeHtml(session.description)}\n` +
           `📍 <b>Location:</b> ${escapeHtml(session.location)}\n` +
           `🎨 <b>Color ID:</b> ${session.colorId || "Default"}\n` +
@@ -688,8 +727,8 @@ async function handleTextMessage(ctx: TextContextType) {
       await ctx.reply("Failed to save event to database.");
     } finally {
       userSessions.delete(telegramId);
+      return;
     }
-    return;
   }
 
   // 6. STEP: AWAITING_EDIT_VALUE (Text edits for Title, Description, Location, Start Time)
@@ -718,8 +757,6 @@ async function handleTextMessage(ctx: TextContextType) {
   }
 }
 
-eventsComposer.on("message:text", handleTextMessage);
-
 /**
  * Callback Query: Skip Photo Upload
  */
@@ -737,6 +774,8 @@ eventsComposer.callbackQuery(
     await proceedAfterPhoto(ctx, telegramId, session);
   },
 );
+
+eventsComposer.on("message:text", handleTextMessage);
 
 /**
  * Handle incoming photos for both Event Creation and Event Editing

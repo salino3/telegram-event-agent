@@ -132,10 +132,11 @@ export async function saveEventUpdate(
       return;
     }
 
-    // Sync to Google Calendar
+    // Sync to Google Calendar target account
     if (updatedEvt.google_event_id) {
       await updateGoogleCalendarEvent({
         telegramId,
+        eventId, // Pass database eventId so tokens for the correct owning account are queried
         googleEventId: updatedEvt.google_event_id,
         title: updatedEvt.title,
         description: updatedEvt.description,
@@ -180,66 +181,93 @@ export async function sendUpdatedEventCard(
   eventId: number,
   headerPrefix: string = "",
 ) {
-  const result = await query(
-    `SELECT e.id, e.title, e.priority, e.start_time, e.end_time, e.description, e.location,
-            (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id
-     FROM events e WHERE e.id = $1`,
-    [eventId],
-  );
+  try {
+    // 1. Fetch event details AND linked Google account email
+    const evtRes = await query(
+      `SELECT 
+         e.id, 
+         e.title, 
+         e.description, 
+         e.location, 
+         e.priority, 
+         e.start_time, 
+         e.end_time,
+         ga.email
+       FROM events e
+       LEFT JOIN google_accounts ga 
+         ON ga.id = COALESCE(
+           e.google_account_id, 
+           (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+         )
+       WHERE e.id = $1`,
+      [eventId],
+    );
 
-  if (result.rows.length === 0) {
-    await ctx.reply("Event not found.");
-    return;
-  }
+    if (evtRes.rows.length === 0) return;
 
-  const evt = result.rows[0];
-  const formattedStartDate = new Date(evt.start_time)
-    .toLocaleString()
-    .replace(",", "");
-  const priorityKey = (evt.priority as string).toLowerCase();
-  const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
+    const evt = evtRes.rows[0];
 
-  const captionText =
-    `${headerPrefix}` +
-    `📌 <b>${escapeHtml(evt.title)}</b>\n\n` +
-    `🚨 <b>Priority:</b> ${emoji} ${evt.priority.toUpperCase()}\n` +
-    `📅 <b>Date:</b> ${formattedStartDate}\n` +
-    `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
-    `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}`;
+    // Priority formatting
+    const priorityValue = (evt.priority || "medium").toLowerCase();
+    const priorityEmoji = PRIORITY_EMOJIS[priorityValue] || "🟡";
+    const priorityFormatted = `${priorityEmoji} ${priorityValue.toUpperCase()}`;
 
-  const actionKeyboard = new InlineKeyboard()
-    .text("✏️ Edit", `edit_event_${evt.id}`)
-    .text("🗑️ Delete", `delete_event_${evt.id}`);
+    // Date formatting
+    const startDate = new Date(evt.start_time);
+    const formattedDate = startDate.toLocaleString();
 
-  const photoToUpload = evt.photo_id || DEFAULT_EVENT_IMAGE;
+    // 2. Format the Email badge line (grey/code style)
+    const emailLine = `📬 <b>Saved To: <code>${
+      evt.email ? escapeHtml(evt.email) : "No Calendar Linked"
+    }</code></b>\n`;
 
-  // Check if we are inside a callback query (inline button interaction) to edit in-place
-  if (ctx.callbackQuery && ctx.callbackQuery.message) {
-    try {
-      await ctx.editMessageMedia(
-        {
-          type: "photo",
-          media: photoToUpload,
-          caption: captionText,
-          parse_mode: "HTML",
-        },
-        {
-          reply_markup: actionKeyboard,
-        },
-      );
-      return;
-    } catch (err) {
-      console.warn(
-        "Could not edit message media in place, sending new photo...",
-        err,
-      );
+    // 3. Assemble the caption (Email right under the Title)
+    const captionText =
+      `${headerPrefix}` +
+      `📌 <b>${escapeHtml(evt.title)}</b>\n` +
+      `${emailLine}\n` +
+      `🚨 <b>Priority:</b> ${priorityFormatted}\n` +
+      `📅 <b>Date:</b> ${formattedDate}\n` +
+      `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
+      `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}`;
+
+    // Keyboard (Notice: Email is NOT included here so it cannot be edited)
+    const actionKeyboard = new InlineKeyboard()
+      .text("✏️ Edit", `edit_event_${eventId}`)
+      .text("🗑️ Delete", `delete_event_${eventId}`);
+
+    const photoToUpload = evt.photo_id || DEFAULT_EVENT_IMAGE;
+
+    // Check if we are inside a callback query (inline button interaction) to edit in-place
+    if (ctx.callbackQuery && ctx.callbackQuery.message) {
+      try {
+        await ctx.editMessageMedia(
+          {
+            type: "photo",
+            media: photoToUpload,
+            caption: captionText,
+            parse_mode: "HTML",
+          },
+          {
+            reply_markup: actionKeyboard,
+          },
+        );
+        return;
+      } catch (err) {
+        console.warn(
+          "Could not edit message media in place, sending new photo...",
+          err,
+        );
+      }
     }
-  }
 
-  // Fallback: send a new photo message if editing in place isn't applicable
-  await ctx.replyWithPhoto(photoToUpload, {
-    caption: captionText,
-    parse_mode: "HTML",
-    reply_markup: actionKeyboard,
-  });
+    // Fallback: send a new photo message if editing in place isn't applicable
+    await ctx.replyWithPhoto(photoToUpload, {
+      caption: captionText,
+      parse_mode: "HTML",
+      reply_markup: actionKeyboard,
+    });
+  } catch (error) {
+    console.error("Error sending updated event card:", error);
+  }
 }
