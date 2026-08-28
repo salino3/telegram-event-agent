@@ -43,6 +43,7 @@ export async function createGoogleCalendarEvent(
   id: string | null;
   htmlLink: string | null;
   googleAccountId: number | null;
+  googleEmail: string | null;
 }> {
   try {
     // 1. Fetch ga.id along with access_token, refresh_token, and email
@@ -55,7 +56,12 @@ export async function createGoogleCalendarEvent(
     );
 
     if (dbRes.rows.length === 0) {
-      return { id: null, htmlLink: null, googleAccountId: null };
+      return {
+        id: null,
+        htmlLink: null,
+        googleAccountId: null,
+        googleEmail: null,
+      };
     }
 
     const { google_account_id, access_token, refresh_token, email } =
@@ -89,10 +95,16 @@ export async function createGoogleCalendarEvent(
       id: response.data.id || null,
       htmlLink: directLink,
       googleAccountId: google_account_id,
+      googleEmail: email,
     };
   } catch (error) {
     console.error("Error creating Google Calendar event:", error);
-    return { id: null, htmlLink: null, googleAccountId: null };
+    return {
+      id: null,
+      htmlLink: null,
+      googleAccountId: null,
+      googleEmail: null,
+    };
   }
 }
 

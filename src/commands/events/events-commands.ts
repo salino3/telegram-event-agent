@@ -633,6 +633,7 @@ async function handleTextMessage(ctx: TextContextType) {
         id: googleEventId,
         htmlLink: googleEventUrl,
         googleAccountId,
+        googleEmail,
       } = await createGoogleCalendarEvent({
         telegramId,
         title: session.title!,
@@ -685,9 +686,14 @@ async function handleTextMessage(ctx: TextContextType) {
         ? `\n\n🔗 <a href="${googleEventUrl}">View in Google Calendar</a>`
         : "";
 
+      const emailLine = `📧 <b>Organizer: <code>${
+        googleEmail ? escapeHtml(googleEmail) : "No Calendar Linked"
+      }</code></b>\n`;
+
       await ctx.reply(
         `✅ <b>Event Saved!</b>\n\n` +
           `📌 <b>Title:</b> ${escapeHtml(session.title)}\n` +
+          `${emailLine}` +
           `📄 <b>Description:</b> ${escapeHtml(session.description)}\n` +
           `📍 <b>Location:</b> ${escapeHtml(session.location)}\n` +
           `🎨 <b>Color ID:</b> ${session.colorId || "Default"}\n` +
@@ -705,8 +711,8 @@ async function handleTextMessage(ctx: TextContextType) {
       await ctx.reply("Failed to save event to database.");
     } finally {
       userSessions.delete(telegramId);
+      return;
     }
-    return;
   }
 
   // 6. STEP: AWAITING_EDIT_VALUE (Text edits for Title, Description, Location, Start Time)

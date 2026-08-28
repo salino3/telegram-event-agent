@@ -217,7 +217,9 @@ export async function sendUpdatedEventCard(
     const formattedDate = startDate.toLocaleString();
 
     // 2. Format the Email badge line (grey/code style)
-    const emailLine = `📧 <b>Organizer: <code>${evt.email ? escapeHtml(evt.email) : "No Calendar Linked"}</code></b>\n`;
+    const emailLine = `📧 <b>Organizer: <code>${
+      evt.email ? escapeHtml(evt.email) : "No Calendar Linked"
+    }</code></b>\n`;
 
     // 3. Assemble the caption (Email right under the Title)
     const captionText =
