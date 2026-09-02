@@ -185,21 +185,23 @@ export async function sendUpdatedEventCard(
     // 1. Fetch event details AND linked Google account email
     const evtRes = await query(
       `SELECT 
-         e.id, 
-         e.title, 
-         e.description, 
-         e.location, 
-         e.priority, 
-         e.start_time, 
-         e.end_time,
-         ga.email
-       FROM events e
-       LEFT JOIN google_accounts ga 
-         ON ga.id = COALESCE(
-           e.google_account_id, 
-           (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
-         )
-       WHERE e.id = $1`,
+     e.id, 
+     e.title, 
+     e.description, 
+     e.location, 
+     e.priority, 
+     e.start_time, 
+     e.end_time,
+     ga.email,
+      (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
+      (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id
+   FROM events e
+   LEFT JOIN google_accounts ga 
+     ON ga.id = COALESCE(
+       e.google_account_id, 
+       (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+     )
+   WHERE e.id = $1`,
       [eventId],
     );
 

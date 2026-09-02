@@ -504,7 +504,7 @@ eventsComposer.callbackQuery(
       priority: "",
       start_time:
         "📆 Enter the new start date and time (Format: <b>DD-MM-YYYY HH:MM</b>):",
-      photo: "📸 Send a new <b>photo/image</b> to update this event:",
+      photo: "📸 Send a new <b>photo/image/document</b> to update this event:",
     };
 
     await ctx.reply(prompts[field], { parse_mode: "HTML" });
