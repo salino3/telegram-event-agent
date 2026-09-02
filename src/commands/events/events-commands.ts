@@ -798,7 +798,7 @@ eventsComposer.on(
     const photos = ctx.message.photo;
     const photoFileId = photos[photos.length - 1].file_id;
 
-    // 1. EVENT CREATION WIZARD FLOW
+    // 1. EVENT CREATION FLOW
     if (session.step === WizardStep.AWAITING_PHOTO) {
       session.photoId = photoFileId;
       await ctx.reply("📸 Photo attached!");
@@ -809,22 +809,35 @@ eventsComposer.on(
     // 2. EVENT EDITING FLOW
     if (
       session.step === WizardStep.AWAITING_EDIT_VALUE &&
-      session.editingField === "photo" &&
       session.editingEventId
     ) {
-      await handleAttachmentUpdate(
-        ctx,
-        telegramId,
-        session.editingEventId,
-        "photo",
-        photoFileId,
-      );
+      // Correct field: User is updating event photo
+      if (session.editingField === "photo") {
+        await handleAttachmentUpdate(
+          ctx,
+          telegramId,
+          session.editingEventId,
+          "photo",
+          photoFileId,
+        );
+        return;
+      }
+
+      // Wrong field: User sent a compressed photo while editing a document/PDF
+      if (session.editingField === "document") {
+        await ctx.reply(
+          "⚠️ <b>Invalid file type!</b>\n\n" +
+            "You sent a photo, but a <b>document/PDF file</b> was expected for this update.",
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
     }
   },
 );
 
 /**
- * Handle incoming document attachments for Event Editing
+ * Handle incoming document attachments for Event Editing & Creation
  */
 eventsComposer.on(
   "message:document",
@@ -835,10 +848,35 @@ eventsComposer.on(
     const session = userSessions.get(telegramId);
     if (!session) return;
 
-    // Extract document file_id
-    const docFileId = ctx.message.document.file_id;
+    const doc = ctx.message.document;
+    const docFileId = doc.file_id;
+    const mimeType = doc.mime_type || "";
 
-    // EVENT EDITING FLOW FOR DOCUMENTS
+    // 1. EVENT CREATION FLOW (User sends a document when prompted for a photo)
+    if (session.step === WizardStep.AWAITING_PHOTO) {
+      // If user uploaded an uncompressed image file (e.g., JPEG, PNG)
+      if (mimeType.startsWith("image/")) {
+        session.photoId = docFileId;
+        await ctx.reply("📸 Photo attached!");
+        await proceedAfterPhoto(ctx, telegramId, session);
+        return;
+      }
+
+      // If user uploaded a non-image document (e.g., PDF)
+      const skipKeyboard = new InlineKeyboard().text("➡️ Skip", "skip_photo");
+      await ctx.reply(
+        "⚠️ <b>Invalid file format!</b>\n\n" +
+          "You sent a document/PDF, but a <b>photo</b> is expected for this step. " +
+          "Please send an image or press <b>Skip</b>.",
+        {
+          parse_mode: "HTML",
+          reply_markup: skipKeyboard,
+        },
+      );
+      return;
+    }
+
+    // 2. EVENT EDITING FLOW FOR DOCUMENTS
     if (
       session.step === WizardStep.AWAITING_EDIT_VALUE &&
       session.editingField === "document" &&
