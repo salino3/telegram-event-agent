@@ -546,6 +546,24 @@ eventsComposer.callbackQuery(
 );
 
 /**
+ * Callback Query: Skip Photo Upload
+ */
+eventsComposer.callbackQuery(
+  "skip_photo",
+  async (ctx: CallbackQueryContext<Context>) => {
+    const telegramId = ctx.from.id;
+    const session = userSessions.get(telegramId);
+    if (!session || session.step !== WizardStep.AWAITING_PHOTO) return;
+
+    session.photoId = undefined;
+    await ctx.answerCallbackQuery();
+
+    // Proceed to Color or Priority
+    await proceedAfterPhoto(ctx, telegramId, session);
+  },
+);
+
+/**
  * Global Text Handler for State Machine Inputs (Wizard Flow)
  */
 async function handleTextMessage(ctx: TextContextType) {
@@ -756,24 +774,6 @@ async function handleTextMessage(ctx: TextContextType) {
     await saveEventUpdate(ctx, telegramId, eventId, field, updatedValue);
   }
 }
-
-/**
- * Callback Query: Skip Photo Upload
- */
-eventsComposer.callbackQuery(
-  "skip_photo",
-  async (ctx: CallbackQueryContext<Context>) => {
-    const telegramId = ctx.from.id;
-    const session = userSessions.get(telegramId);
-    if (!session || session.step !== WizardStep.AWAITING_PHOTO) return;
-
-    session.photoId = undefined;
-    await ctx.answerCallbackQuery();
-
-    // Proceed to Color or Priority
-    await proceedAfterPhoto(ctx, telegramId, session);
-  },
-);
 
 eventsComposer.on("message:text", handleTextMessage);
 
