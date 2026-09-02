@@ -16,13 +16,17 @@ export enum WizardStep {
 
 export type PriorityType = "low" | "medium" | "high";
 
+export type MultimediaFieldType =
+  // "video" |
+  "photo" | "document";
+
 export type EditingFieldType =
   | "title"
   | "description"
   | "location"
   | "priority"
   | "start_time"
-  | "photo";
+  | MultimediaFieldType;
 
 export interface UserSessionProps {
   step: WizardStep;
@@ -36,6 +40,7 @@ export interface UserSessionProps {
   startDate?: Date;
   durationMinutes?: number;
   photoId?: string;
+  documentId?: string;
 }
 
 export type TextContextType = Filter<Context, "message:text">;
