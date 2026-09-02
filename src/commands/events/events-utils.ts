@@ -3,7 +3,11 @@ import { query } from "../../db.js";
 import { updateGoogleCalendarEvent } from "../../services/google-calendar.js";
 import { utilitiesApp } from "../../utils/utilities-app.js";
 import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
-import { EditingFieldType, WizardStep } from "../../types/session.js";
+import {
+  EditingFieldType,
+  MultimediaFieldType,
+  WizardStep,
+} from "../../types/session.js";
 import { userSessions } from "../../session/store.js";
 
 const { buildColorKeyboard, escapeHtml } = utilitiesApp();
@@ -65,6 +69,52 @@ export async function proceedAfterPhoto(
       parse_mode: "HTML",
       reply_markup: priorityKeyboard,
     });
+  }
+}
+
+/**
+ * Insert in DB event_attachments data
+ */
+export async function handleAttachmentUpdate(
+  ctx: Context,
+  telegramId: number,
+  eventId: number,
+  fileType: MultimediaFieldType,
+  fileId: string,
+) {
+  try {
+    // Single query lookup + upsert
+    const res = await query(
+      `INSERT INTO event_attachments (event_id, uploaded_by, file_type, content)
+       SELECT $1, a.id, $2, $3
+       FROM accounts a
+       WHERE a.telegram_id = $4
+       ON CONFLICT (event_id, file_type) 
+       DO UPDATE SET 
+         content = EXCLUDED.content,
+         uploaded_by = EXCLUDED.uploaded_by,
+         created_at = CURRENT_TIMESTAMP
+       RETURNING id;`,
+      [eventId, fileType, fileId, telegramId],
+    );
+
+    // If no row was returned, the telegram_id was not found in accounts
+    if (res.rows.length === 0) {
+      await ctx.reply("❌ Account not found. Please run /start first.");
+      return;
+    }
+
+    userSessions.delete(telegramId);
+
+    const label = fileType === "photo" ? "Image" : "Document";
+    await sendUpdatedEventCard(
+      ctx,
+      eventId,
+      `✅ <b>[${label}] updated successfully!</b>\n\n`,
+    );
+  } catch (error) {
+    console.error(`Error updating event ${fileType}:`, error);
+    await ctx.reply(`❌ Failed to update ${fileType} in database.`);
   }
 }
 
@@ -160,6 +210,7 @@ export async function saveEventUpdate(
       priority: "Priority",
       start_time: "Start Time",
       photo: "Photo/Image",
+      document: "Document",
     };
 
     await sendUpdatedEventCard(
@@ -185,21 +236,23 @@ export async function sendUpdatedEventCard(
     // 1. Fetch event details AND linked Google account email
     const evtRes = await query(
       `SELECT 
-         e.id, 
-         e.title, 
-         e.description, 
-         e.location, 
-         e.priority, 
-         e.start_time, 
-         e.end_time,
-         ga.email
-       FROM events e
-       LEFT JOIN google_accounts ga 
-         ON ga.id = COALESCE(
-           e.google_account_id, 
-           (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
-         )
-       WHERE e.id = $1`,
+     e.id, 
+     e.title, 
+     e.description, 
+     e.location, 
+     e.priority, 
+     e.start_time, 
+     e.end_time,
+     ga.email,
+      (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
+      (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id
+   FROM events e
+   LEFT JOIN google_accounts ga 
+     ON ga.id = COALESCE(
+       e.google_account_id, 
+       (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+     )
+   WHERE e.id = $1`,
       [eventId],
     );
 
@@ -229,12 +282,19 @@ export async function sendUpdatedEventCard(
       `🚨 <b>Priority:</b> ${priorityFormatted}\n` +
       `📅 <b>Date:</b> ${formattedDate}\n` +
       `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
-      `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}`;
+      `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}\n` +
+      `📄 <b>Document:</b> <i>${evt.document_id ? "Attached" : "Unattached"}</i>`;
 
     // Keyboard (Notice: Email is NOT included here so it cannot be edited)
     const actionKeyboard = new InlineKeyboard()
       .text("✏️ Edit", `edit_event_${eventId}`)
       .text("🗑️ Delete", `delete_event_${eventId}`);
+
+    if (evt.document_id) {
+      actionKeyboard
+        .row()
+        .text("📄 Download Document", `download_doc_${eventId}`);
+    }
 
     const photoToUpload = evt.photo_id || DEFAULT_EVENT_IMAGE;
 

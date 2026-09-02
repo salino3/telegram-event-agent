@@ -1,4 +1,10 @@
-import { CommandContext, Composer, Context, InlineKeyboard } from "grammy";
+import {
+  CommandContext,
+  Composer,
+  Context,
+  Filter,
+  InlineKeyboard,
+} from "grammy";
 import { CallbackQueryContext } from "grammy/web";
 import { query } from "../../db.js";
 import { userSessions } from "../../session/store.js";
@@ -8,12 +14,13 @@ import {
 } from "../../services/google-calendar.js";
 import { utilitiesApp } from "../../utils/utilities-app.js";
 import {
+  handleAttachmentUpdate,
   proceedAfterLocation,
   proceedAfterPhoto,
   saveEventUpdate,
   sendUpdatedEventCard,
 } from "./events-utils.js";
-import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
+import { PRIORITY_EMOJIS } from "../../constants.js";
 import {
   EditingFieldType,
   PriorityType,
@@ -262,73 +269,20 @@ eventsComposer.command("all_events", async (ctx: CommandContext<Context>) => {
 
 /**
  * Callback Query: Direct Pushpin Selection (select_event_X)
- * Directly displays the event image (or default photo) with full details
- * and inline action buttons (Edit & Delete).
+ * Delegates rendering directly to sendUpdatedEventCard
  */
 eventsComposer.callbackQuery(
   /^select_event_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
-    const eventId = ctx.match[1];
+    const eventId = parseInt(ctx.match[1], 10);
 
     try {
-      // 1. Join with google_accounts to fetch email (with default account fallback)
-      const result = await query(
-        `SELECT 
-           e.id, e.title, e.priority, e.start_time, e.end_time, e.description, e.location,
-           ga.email,
-           (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id
-         FROM events e
-         LEFT JOIN google_accounts ga 
-           ON ga.id = COALESCE(
-             e.google_account_id, 
-             (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
-           )
-         WHERE e.id = $1`,
-        [eventId],
-      );
-
-      if (result.rows.length === 0) {
-        await ctx.answerCallbackQuery({ text: "Event not found." });
-        return;
-      }
-
-      const evt = result.rows[0];
-      const formattedStartDate = new Date(evt.start_time)
-        .toLocaleString()
-        .replace(",", "");
-      const priorityKey = (evt.priority as string).toLowerCase();
-      const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
-
-      // 2. Format Organizer email line
-      const emailLine = `📬 <b>Saved To: <code>${
-        evt.email ? escapeHtml(evt.email) : "No Calendar Linked"
-      }</code></b>\n`;
-
-      // 3. Assemble captionText with Organizer email placed under the title
-      const captionText =
-        `📌 <b>${escapeHtml(evt.title)}</b>\n` +
-        `${emailLine}\n` +
-        `🚨 <b>Priority:</b> ${emoji} ${evt.priority.toUpperCase()}\n` +
-        `📅 <b>Date:</b> ${formattedStartDate}\n` +
-        `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
-        `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}`;
-
-      const actionKeyboard = new InlineKeyboard()
-        .text("✏️ Edit", `edit_event_${evt.id}`)
-        .text("🗑️ Delete", `delete_event_${evt.id}`);
-
       await ctx.answerCallbackQuery();
-
-      const photoToUpload = evt.photo_id || DEFAULT_EVENT_IMAGE;
-
-      await ctx.replyWithPhoto(photoToUpload, {
-        caption: captionText,
-        parse_mode: "HTML",
-        reply_markup: actionKeyboard,
-      });
+      // Render event card with all details and dynamic document button
+      await sendUpdatedEventCard(ctx, eventId);
     } catch (error) {
-      console.error("Error fetching event details:", error);
-      await ctx.answerCallbackQuery({ text: "Error fetching event details." });
+      console.error("Error displaying selected event card:", error);
+      await ctx.reply("❌ Error fetching event details.");
     }
   },
 );
@@ -450,7 +404,8 @@ eventsComposer.callbackQuery(
       .text("🚨 Priority", `edit_field_priority_${eventId}`)
       .row()
       .text("📆 Start Time", `edit_field_start_time_${eventId}`)
-      .text("🖼️ Image/Media", `edit_field_photo_${eventId}`);
+      .text("🖼️ Image/Media", `edit_field_photo_${eventId}`)
+      .text("📎 Document", `edit_field_document_${eventId}`);
 
     await ctx.reply("✏️ **Which field would you like to edit?**", {
       reply_markup: editMenuKeyboard,
@@ -463,7 +418,7 @@ eventsComposer.callbackQuery(
  * Callback Query: Trigger Edit Wizard (Select Field to Modify)
  */
 eventsComposer.callbackQuery(
-  /^edit_field_(title|description|location|priority|start_time|photo)_(\d+)$/,
+  /^edit_field_(title|description|location|priority|start_time|photo|document)_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
     const field = ctx.match[1] as EditingFieldType;
     const eventId = parseInt(ctx.match[2], 10);
@@ -505,6 +460,7 @@ eventsComposer.callbackQuery(
       start_time:
         "📆 Enter the new start date and time (Format: <b>DD-MM-YYYY HH:MM</b>):",
       photo: "📸 Send a new <b>photo/image</b> to update this event:",
+      document: "📎 Send a <b>document/PDF</b> to attach to this event:",
     };
 
     await ctx.reply(prompts[field], { parse_mode: "HTML" });
@@ -542,6 +498,62 @@ eventsComposer.callbackQuery(
 
     // Save and sync priority update
     await saveEventUpdate(ctx, telegramId, eventId, "priority", newPriority);
+  },
+);
+
+/**
+ * Callback Query: Skip Photo Upload
+ */
+eventsComposer.callbackQuery(
+  "skip_photo",
+  async (ctx: CallbackQueryContext<Context>) => {
+    const telegramId = ctx.from.id;
+    const session = userSessions.get(telegramId);
+    if (!session || session.step !== WizardStep.AWAITING_PHOTO) return;
+
+    session.photoId = undefined;
+    await ctx.answerCallbackQuery();
+
+    // Proceed to Color or Priority
+    await proceedAfterPhoto(ctx, telegramId, session);
+  },
+);
+
+/**
+ * Callback Query: Download Document attached to an event
+ */
+eventsComposer.callbackQuery(
+  /^download_doc_(\d+)$/,
+  async (ctx: CallbackQueryContext<Context>) => {
+    const eventId = parseInt(ctx.match[1], 10);
+
+    try {
+      await ctx.answerCallbackQuery();
+
+      // Retrieve the document file_id from event_attachments
+      const res = await query(
+        `SELECT content 
+         FROM event_attachments 
+         WHERE event_id = $1 AND file_type = 'document' 
+         LIMIT 1`,
+        [eventId],
+      );
+
+      if (res.rows.length === 0 || !res.rows[0].content) {
+        await ctx.reply("❌ No document attached to this event.");
+        return;
+      }
+
+      const docFileId = res.rows[0].content;
+
+      // Send document to user
+      await ctx.replyWithDocument(docFileId, {
+        caption: "📄 Here is your attached document:",
+      });
+    } catch (error) {
+      console.error("Error sending attached document:", error);
+      await ctx.reply("❌ Failed to retrieve document.");
+    }
   },
 );
 
@@ -737,6 +749,17 @@ async function handleTextMessage(ctx: TextContextType) {
     session.editingEventId &&
     session.editingField
   ) {
+    // If the user sends text while editing 'photo' or 'document', reply with an error:
+    if (
+      session.editingField === "photo" ||
+      session.editingField === "document"
+    ) {
+      await ctx.reply(
+        `❌ Please send a valid ${session.editingField} file (or photo).`,
+      );
+      return;
+    }
+
     const value = ctx.message.text;
     const eventId = session.editingEventId;
     const field = session.editingField;
@@ -757,91 +780,115 @@ async function handleTextMessage(ctx: TextContextType) {
   }
 }
 
-/**
- * Callback Query: Skip Photo Upload
- */
-eventsComposer.callbackQuery(
-  "skip_photo",
-  async (ctx: CallbackQueryContext<Context>) => {
-    const telegramId = ctx.from.id;
-    const session = userSessions.get(telegramId);
-    if (!session || session.step !== WizardStep.AWAITING_PHOTO) return;
-
-    session.photoId = undefined;
-    await ctx.answerCallbackQuery();
-
-    // Proceed to Color or Priority
-    await proceedAfterPhoto(ctx, telegramId, session);
-  },
-);
-
 eventsComposer.on("message:text", handleTextMessage);
 
 /**
  * Handle incoming photos for both Event Creation and Event Editing
  */
-eventsComposer.on("message:photo", async (ctx) => {
-  const telegramId = ctx.from?.id;
-  if (!telegramId) return;
+eventsComposer.on(
+  "message:photo",
+  async (ctx: Filter<Context, "message:photo">) => {
+    const telegramId = ctx.from?.id;
+    if (!telegramId) return;
 
-  const session = userSessions.get(telegramId);
-  if (!session) return;
+    const session = userSessions.get(telegramId);
+    if (!session) return;
 
-  // Extract highest resolution photo file_id
-  const photos = ctx.message.photo;
-  const highestResPhoto = photos[photos.length - 1];
-  const photoFileId = highestResPhoto.file_id;
+    // Extract highest resolution photo file_id
+    const photos = ctx.message.photo;
+    const photoFileId = photos[photos.length - 1].file_id;
 
-  // 1. EVENT CREATION WIZARD FLOW
-  if (session.step === WizardStep.AWAITING_PHOTO) {
-    session.photoId = photoFileId;
-    await ctx.reply("📸 Photo attached!");
-    await proceedAfterPhoto(ctx, telegramId, session);
-    return;
-  }
-
-  // 2. EVENT EDITING FLOW
-  if (
-    session.step === WizardStep.AWAITING_EDIT_VALUE &&
-    session.editingField === "photo" &&
-    session.editingEventId
-  ) {
-    const eventId = session.editingEventId;
-
-    try {
-      // Get creator's database account ID
-      const accRes = await query(
-        "SELECT id FROM accounts WHERE telegram_id = $1",
-        [telegramId],
-      );
-      if (accRes.rows.length === 0) return;
-      const creatorId = accRes.rows[0].id;
-
-      // Insert or update new photo attachment
-      await query(
-        `INSERT INTO event_attachments (event_id, uploaded_by, file_type, content)
-         VALUES ($1, $2, 'photo', $3)
-         ON CONFLICT (event_id, file_type) 
-         DO UPDATE SET 
-           content = EXCLUDED.content,
-           uploaded_by = EXCLUDED.uploaded_by,
-           created_at = CURRENT_TIMESTAMP;`,
-        [eventId, creatorId, photoFileId],
-      );
-
-      // Clean up user session
-      userSessions.delete(telegramId);
-
-      // Refresh event card in-place with success message
-      await sendUpdatedEventCard(
-        ctx,
-        eventId,
-        "✅ <b>[Photo/Image] updated successfully!</b>\n\n",
-      );
-    } catch (error) {
-      console.error("Error updating event image:", error);
-      await ctx.reply("❌ Failed to update image in database.");
+    // 1. EVENT CREATION FLOW
+    if (session.step === WizardStep.AWAITING_PHOTO) {
+      session.photoId = photoFileId;
+      await ctx.reply("📸 Photo attached!");
+      await proceedAfterPhoto(ctx, telegramId, session);
+      return;
     }
-    return;
-  }
-});
+
+    // 2. EVENT EDITING FLOW
+    if (
+      session.step === WizardStep.AWAITING_EDIT_VALUE &&
+      session.editingEventId
+    ) {
+      // Correct field: User is updating event photo
+      if (session.editingField === "photo") {
+        await handleAttachmentUpdate(
+          ctx,
+          telegramId,
+          session.editingEventId,
+          "photo",
+          photoFileId,
+        );
+        return;
+      }
+
+      // Wrong field: User sent a compressed photo while editing a document/PDF
+      if (session.editingField === "document") {
+        await ctx.reply(
+          "⚠️ <b>Invalid file type!</b>\n\n" +
+            "You sent a photo, but a <b>document/PDF file</b> was expected for this update.",
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+    }
+  },
+);
+
+/**
+ * Handle incoming document attachments for Event Editing & Creation
+ */
+eventsComposer.on(
+  "message:document",
+  async (ctx: Filter<Context, "message:document">) => {
+    const telegramId = ctx.from?.id;
+    if (!telegramId) return;
+
+    const session = userSessions.get(telegramId);
+    if (!session) return;
+
+    const doc = ctx.message.document;
+    const docFileId = doc.file_id;
+    const mimeType = doc.mime_type || "";
+
+    // 1. EVENT CREATION FLOW (User sends a document when prompted for a photo)
+    if (session.step === WizardStep.AWAITING_PHOTO) {
+      // If user uploaded an uncompressed image file (e.g., JPEG, PNG)
+      if (mimeType.startsWith("image/")) {
+        session.photoId = docFileId;
+        await ctx.reply("📸 Photo attached!");
+        await proceedAfterPhoto(ctx, telegramId, session);
+        return;
+      }
+
+      // If user uploaded a non-image document (e.g., PDF)
+      const skipKeyboard = new InlineKeyboard().text("➡️ Skip", "skip_photo");
+      await ctx.reply(
+        "⚠️ <b>Invalid file format!</b>\n\n" +
+          "You sent a document/PDF, but a <b>photo</b> is expected for this step. " +
+          "Please send an image or press <b>Skip</b>.",
+        {
+          parse_mode: "HTML",
+          reply_markup: skipKeyboard,
+        },
+      );
+      return;
+    }
+
+    // 2. EVENT EDITING FLOW FOR DOCUMENTS
+    if (
+      session.step === WizardStep.AWAITING_EDIT_VALUE &&
+      session.editingField === "document" &&
+      session.editingEventId
+    ) {
+      await handleAttachmentUpdate(
+        ctx,
+        telegramId,
+        session.editingEventId,
+        "document",
+        docFileId,
+      );
+    }
+  },
+);
