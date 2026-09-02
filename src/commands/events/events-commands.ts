@@ -20,7 +20,7 @@ import {
   saveEventUpdate,
   sendUpdatedEventCard,
 } from "./events-utils.js";
-import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
+import { PRIORITY_EMOJIS } from "../../constants.js";
 import {
   EditingFieldType,
   PriorityType,
