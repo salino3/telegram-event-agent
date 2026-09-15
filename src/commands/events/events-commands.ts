@@ -158,7 +158,7 @@ eventsComposer.callbackQuery(
     }
   },
 );
-
+// TODO: Restart checking from here
 /**
  * Command: /upcoming_events
  * Queries DB for active/imminent events using the end_time fallback logic,
