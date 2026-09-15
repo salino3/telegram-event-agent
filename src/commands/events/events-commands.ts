@@ -158,7 +158,7 @@ eventsComposer.callbackQuery(
     }
   },
 );
-
+// TODO: Restart checking from here
 /**
  * Command: /upcoming_events
  * Queries DB for active/imminent events using the end_time fallback logic,
@@ -179,7 +179,7 @@ eventsComposer.command(
            AND acc.is_active = TRUE
            AND COALESCE(e.end_time::timestamptz, e.start_time::timestamptz + INTERVAL '3 hours') >= NOW()
          ORDER BY e.start_time::timestamptz ASC`,
-        [telegramId],
+        [String(telegramId)],
       );
 
       if (result.rows.length === 0) {
@@ -229,7 +229,7 @@ eventsComposer.command("all_events", async (ctx: CommandContext<Context>) => {
        JOIN accounts acc ON e.creator_id = acc.id
        WHERE acc.telegram_id = $1 AND acc.is_active = TRUE
        ORDER BY e.start_time DESC`,
-      [telegramId],
+      [String(telegramId)],
     );
 
     if (result.rows.length === 0) {
@@ -299,26 +299,24 @@ eventsComposer.callbackQuery(
     try {
       // Single Atomic SQL Sentence: Deletes attachments & event, returning Google Sync details
       const deleteRes = await query(
-        `WITH deleted_attachments AS (
-           DELETE FROM event_attachments
-           WHERE event_id = $1
-         ),
-         deleted_event AS (
-           DELETE FROM events
-           WHERE id = $1 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)
-           RETURNING google_event_id, google_account_id
-         )
-         SELECT 
-           de.google_event_id, 
-           ga.access_token, 
-           ga.refresh_token, 
-           ga.email
-         FROM deleted_event de
-         JOIN google_accounts ga ON de.google_account_id = ga.id`,
+        `WITH deleted_event AS (
+        DELETE FROM events
+        WHERE id = $1 
+          AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)
+        RETURNING google_event_id, google_account_id
+      )
+      SELECT 
+        de.google_event_id, 
+        ga.access_token, 
+        ga.refresh_token, 
+        ga.email
+      FROM deleted_event de
+      LEFT JOIN google_accounts ga 
+        ON de.google_account_id = ga.id`,
         [eventId, String(telegramId)],
       );
 
-      // If no rows were returned, another device already deleted this event (Race condition prevented!)
+      // If no rows returned, either deleted on another device or unauthorized
       if (deleteRes.rows.length === 0) {
         await ctx.answerCallbackQuery({
           text: "Event not found or already deleted.",
@@ -326,11 +324,10 @@ eventsComposer.callbackQuery(
         return;
       }
 
-      // Extract credentials returned directly by the single DB query
       const { google_event_id, access_token, refresh_token, email } =
         deleteRes.rows[0];
 
-      // Delete from Google Calendar if synced (using the specific returned account tokens)
+      // Delete from Google Calendar if synced
       if (google_event_id && access_token) {
         await deleteGoogleCalendarEventDirect({
           googleEventId: google_event_id,
@@ -680,9 +677,9 @@ async function handleTextMessage(ctx: TextContextType) {
       // Persist to Database
       const eventInsertRes = await query(
         `INSERT INTO events (creator_id, title, description, location,
-         priority, start_time, end_time, google_event_id, google_account_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-           RETURNING id`,
+       priority, start_time, end_time, google_event_id, google_account_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+       RETURNING id`,
         [
           creatorId,
           session.title,
@@ -691,8 +688,10 @@ async function handleTextMessage(ctx: TextContextType) {
           priorityValue,
           startTime.toISOString(),
           endTime.toISOString(),
-          googleEventId,
-          googleAccountId,
+          // Ensure null is passed if Google API didn't return IDs
+
+          googleEventId || null,
+          googleAccountId || null,
         ],
       );
 
@@ -701,7 +700,7 @@ async function handleTextMessage(ctx: TextContextType) {
       if (session.photoId && createdEventId) {
         await query(
           `INSERT INTO event_attachments (event_id, uploaded_by, file_type, content)
-           VALUES ($1, $2, 'photo', $3)`,
+         VALUES ($1, $2, 'photo', $3)`,
           [createdEventId, creatorId, session.photoId],
         );
       }

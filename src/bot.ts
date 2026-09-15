@@ -3,6 +3,7 @@ import { startComposer } from "./commands/start.commands.js";
 import { eventsComposer } from "./commands/events/events-commands.js";
 import { accountsComposer } from "./commands/accounts/accounts-commands.js";
 import { googleAuthComposer } from "./commands/google.commands.js";
+import { clearSessionOnCommand } from "./middlewares/user-session.middleware.js";
 import { TELEGRAM_BOT_TOKEN } from "./constants.js";
 
 const token = TELEGRAM_BOT_TOKEN;
@@ -11,6 +12,8 @@ if (!token) {
 }
 
 export const bot = new Bot(token);
+
+bot.use(clearSessionOnCommand);
 
 // Register command composers
 bot.use(accountsComposer);
