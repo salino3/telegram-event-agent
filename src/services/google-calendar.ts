@@ -46,16 +46,19 @@ export async function createGoogleCalendarEvent(
   googleEmail: string | null;
 }> {
   try {
-    // 1. Fetch ga.id along with access_token, refresh_token, and email
+    // 1. Fetch default account or fall back to the most recently created Google account
     const dbRes = await query(
       `SELECT ga.id as google_account_id, ga.access_token, ga.refresh_token, ga.email 
        FROM google_accounts ga
        JOIN accounts a ON ga.account_id = a.id
-       WHERE a.telegram_id = $1 AND ga.is_default = TRUE`,
+       WHERE a.telegram_id = $1
+       ORDER BY ga.is_default DESC, ga.created_at DESC
+       LIMIT 1`,
       [String(input.telegramId)],
     );
 
     if (dbRes.rows.length === 0) {
+      console.warn("⚠️ No connected Google Account found in DB.");
       return {
         id: null,
         htmlLink: null,
@@ -66,15 +69,18 @@ export async function createGoogleCalendarEvent(
 
     const { google_account_id, access_token, refresh_token, email } =
       dbRes.rows[0];
+
+    // 2. Set credentials and handle refresh token logic
     oauth2Client.setCredentials({ access_token, refresh_token });
 
     const priorityLabel = (input.priority || "medium").toUpperCase();
     const fullDescription =
       `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
 
+    // 3. Create event using the exact account email instead of default primary
     const response = await calendarClient.events.insert({
       auth: oauth2Client as any,
-      calendarId: email,
+      calendarId: email || "primary",
       requestBody: {
         summary: input.title,
         description: fullDescription,
@@ -98,7 +104,7 @@ export async function createGoogleCalendarEvent(
       googleEmail: email,
     };
   } catch (error) {
-    console.error("Error creating Google Calendar event:", error);
+    console.error("❌ Error creating Google Calendar event:", error);
     return {
       id: null,
       htmlLink: null,
@@ -113,26 +119,30 @@ export async function updateGoogleCalendarEvent(
   input: UpdateEventInput,
 ): Promise<boolean> {
   try {
-    // Fetch target Google account credentials specifically linked to this event (with fallback to default)
+    // Fetch tokens for the event's specific account (or default account if fallback)
     const dbRes = await query(
       `SELECT ga.access_token, ga.refresh_token, ga.email 
        FROM events e
+       JOIN accounts a ON e.creator_id = a.id
        LEFT JOIN google_accounts ga 
          ON ga.id = COALESCE(
            e.google_account_id, 
-           (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+           (SELECT id FROM google_accounts WHERE account_id = a.id AND is_default = TRUE LIMIT 1)
          )
-       JOIN accounts a ON e.creator_id = a.id
        WHERE a.telegram_id = $1 AND e.id = $2`,
       [String(input.telegramId), input.eventId],
     );
 
-    if (dbRes.rows.length === 0 || !dbRes.rows[0].access_token) return false;
+    if (dbRes.rows.length === 0 || !dbRes.rows[0]?.access_token) {
+      console.warn(
+        "⚠️ No connected Google Account found for this event update.",
+      );
+      return false;
+    }
 
     const { access_token, refresh_token, email } = dbRes.rows[0];
     oauth2Client.setCredentials({ access_token, refresh_token });
 
-    // Detect system/server timezone or default to local environment
     const userTimeZone =
       Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
@@ -161,17 +171,16 @@ export async function updateGoogleCalendarEvent(
       };
     }
 
-    // Patch event directly on the specific email calendar that owns the event
     await calendarClient.events.patch({
       auth: oauth2Client as any,
-      calendarId: email,
+      calendarId: email || "primary",
       eventId: input.googleEventId,
       requestBody,
     });
 
     return true;
   } catch (error) {
-    console.error("Error updating Google Calendar event:", error);
+    console.error("❌ Error updating Google Calendar event:", error);
     return false;
   }
 }

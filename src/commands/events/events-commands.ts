@@ -680,9 +680,9 @@ async function handleTextMessage(ctx: TextContextType) {
       // Persist to Database
       const eventInsertRes = await query(
         `INSERT INTO events (creator_id, title, description, location,
-         priority, start_time, end_time, google_event_id, google_account_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-           RETURNING id`,
+       priority, start_time, end_time, google_event_id, google_account_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+       RETURNING id`,
         [
           creatorId,
           session.title,
@@ -691,8 +691,10 @@ async function handleTextMessage(ctx: TextContextType) {
           priorityValue,
           startTime.toISOString(),
           endTime.toISOString(),
-          googleEventId,
-          googleAccountId,
+          // Ensure null is passed if Google API didn't return IDs
+
+          googleEventId || null,
+          googleAccountId || null,
         ],
       );
 
@@ -701,7 +703,7 @@ async function handleTextMessage(ctx: TextContextType) {
       if (session.photoId && createdEventId) {
         await query(
           `INSERT INTO event_attachments (event_id, uploaded_by, file_type, content)
-           VALUES ($1, $2, 'photo', $3)`,
+         VALUES ($1, $2, 'photo', $3)`,
           [createdEventId, creatorId, session.photoId],
         );
       }

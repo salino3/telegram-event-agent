@@ -18,15 +18,17 @@ export const oauth2Client = new OAuth2Client(
  * @returns The generated authorization URL
  */
 export function getAuthUrl(telegramId: number): string {
-  const scopes = [
+  const SCOPES = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/calendar.events",
   ];
 
   return oauth2Client.generateAuthUrl({
     access_type: "offline", // Required to receive a refresh token
     prompt: "consent", // Forces consent screen to ensure refresh token is returned
-    scope: scopes,
+    scope: SCOPES,
     state: telegramId.toString(), // Pass telegramId to recover it in the callback
   });
 }
