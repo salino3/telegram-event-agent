@@ -158,7 +158,7 @@ eventsComposer.callbackQuery(
     }
   },
 );
-// TODO: Restart checking from here
+
 /**
  * Command: /upcoming_events
  * Queries DB for active/imminent events using the end_time fallback logic,
@@ -275,11 +275,14 @@ eventsComposer.callbackQuery(
   /^select_event_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
     const eventId = parseInt(ctx.match[1], 10);
+    const telegramId = ctx.from?.id;
+
+    if (!telegramId) return;
 
     try {
       await ctx.answerCallbackQuery();
       // Render event card with all details and dynamic document button
-      await sendUpdatedEventCard(ctx, eventId);
+      await sendUpdatedEventCard(ctx, eventId, String(telegramId));
     } catch (error) {
       console.error("Error displaying selected event card:", error);
       await ctx.reply("❌ Error fetching event details.");
@@ -523,17 +526,22 @@ eventsComposer.callbackQuery(
   /^download_doc_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
     const eventId = parseInt(ctx.match[1], 10);
+    const telegramId = ctx.from.id;
 
     try {
       await ctx.answerCallbackQuery();
 
       // Retrieve the document file_id from event_attachments
       const res = await query(
-        `SELECT content 
-         FROM event_attachments 
-         WHERE event_id = $1 AND file_type = 'document' 
+        `SELECT ea.content 
+         FROM event_attachments ea
+         JOIN events e ON ea.event_id = e.id
+         JOIN accounts acc ON e.creator_id = acc.id
+         WHERE ea.event_id = $1 
+           AND ea.file_type = 'document' 
+           AND acc.telegram_id = $2
          LIMIT 1`,
-        [eventId],
+        [eventId, String(telegramId)],
       );
 
       if (res.rows.length === 0 || !res.rows[0].content) {
@@ -559,6 +567,7 @@ eventsComposer.callbackQuery(
  */
 async function handleTextMessage(ctx: TextContextType) {
   const telegramId = ctx.from.id;
+  if (!telegramId) return;
   const session = userSessions.get(telegramId);
   if (!session) return;
 
@@ -643,17 +652,19 @@ async function handleTextMessage(ctx: TextContextType) {
     const endTime = new Date(startTime.getTime() + durationInput * 60 * 1000);
 
     try {
+      // 1. Fetch internal creator account ID using String conversion for precision safety
       const accountRes = await query(
         "SELECT id FROM accounts WHERE telegram_id = $1",
-        [telegramId],
+        [String(telegramId)],
       );
+
       if (accountRes.rows.length === 0) {
         await ctx.reply("Account not found. Please run /start first.");
         return;
       }
       const creatorId = accountRes.rows[0].id;
 
-      // Create event in Google Calendar API using default account
+      // 2. Create event in Google Calendar API
       const {
         id: googleEventId,
         htmlLink: googleEventUrl,
@@ -674,7 +685,7 @@ async function handleTextMessage(ctx: TextContextType) {
       const priorityEmoji = PRIORITY_EMOJIS[priorityValue] || "🟡";
       const priorityFormatted = `${priorityEmoji} [${priorityValue.toUpperCase()}]`;
 
-      // Persist to Database
+      // 3. Persist Event to Database
       const eventInsertRes = await query(
         `INSERT INTO events (creator_id, title, description, location,
        priority, start_time, end_time, google_event_id, google_account_id)
@@ -688,8 +699,6 @@ async function handleTextMessage(ctx: TextContextType) {
           priorityValue,
           startTime.toISOString(),
           endTime.toISOString(),
-          // Ensure null is passed if Google API didn't return IDs
-
           googleEventId || null,
           googleAccountId || null,
         ],
@@ -738,7 +747,6 @@ async function handleTextMessage(ctx: TextContextType) {
       await ctx.reply("Failed to save event to database.");
     } finally {
       userSessions.delete(telegramId);
-      return;
     }
   }
 

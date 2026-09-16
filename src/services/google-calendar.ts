@@ -92,14 +92,14 @@ export async function createGoogleCalendarEvent(
     });
 
     const rawLink = response.data.htmlLink || null;
-    const directLink = rawLink
-      ? `${rawLink}&authuser=${encodeURIComponent(email)}`
-      : null;
+    // const directLink = rawLink
+    //   ? `${rawLink}&authuser=${encodeURIComponent(email)}`
+    //   : null;
 
     // 2. Return googleAccountId alongside id and htmlLink
     return {
       id: response.data.id || null,
-      htmlLink: directLink,
+      htmlLink: rawLink,
       googleAccountId: google_account_id,
       googleEmail: email,
     };
