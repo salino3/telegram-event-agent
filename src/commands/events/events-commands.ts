@@ -526,17 +526,22 @@ eventsComposer.callbackQuery(
   /^download_doc_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
     const eventId = parseInt(ctx.match[1], 10);
+    const telegramId = ctx.from.id;
 
     try {
       await ctx.answerCallbackQuery();
 
       // Retrieve the document file_id from event_attachments
       const res = await query(
-        `SELECT content 
-         FROM event_attachments 
-         WHERE event_id = $1 AND file_type = 'document' 
+        `SELECT ea.content 
+         FROM event_attachments ea
+         JOIN events e ON ea.event_id = e.id
+         JOIN accounts acc ON e.creator_id = acc.id
+         WHERE ea.event_id = $1 
+           AND ea.file_type = 'document' 
+           AND acc.telegram_id = $2
          LIMIT 1`,
-        [eventId],
+        [eventId, String(telegramId)],
       );
 
       if (res.rows.length === 0 || !res.rows[0].content) {
