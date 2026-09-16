@@ -95,7 +95,7 @@ export async function handleAttachmentUpdate(
          uploaded_by = EXCLUDED.uploaded_by,
          created_at = CURRENT_TIMESTAMP
        RETURNING id;`,
-      [eventId, fileType, fileId, telegramId],
+      [eventId, fileType, fileId, String(telegramId)],
     );
 
     // If no row was returned, the telegram_id was not found in accounts
@@ -110,6 +110,7 @@ export async function handleAttachmentUpdate(
     await sendUpdatedEventCard(
       ctx,
       eventId,
+      String(telegramId),
       `✅ <b>[${label}] updated successfully!</b>\n\n`,
     );
   } catch (error) {
@@ -162,7 +163,7 @@ export async function saveEventUpdate(
          SET start_time = $1, end_time = $2, updated_at = CURRENT_TIMESTAMP 
          WHERE id = $3 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $4)
          RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
-        [value, newEndTime, eventId, telegramId],
+        [value, newEndTime, eventId, String(telegramId)],
       );
     } else {
       // Standard update for single fields (title, description, location, priority)
@@ -171,7 +172,7 @@ export async function saveEventUpdate(
          SET ${field} = $1, updated_at = CURRENT_TIMESTAMP 
          WHERE id = $2 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $3)
          RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
-        [value, eventId, telegramId],
+        [value, eventId, String(telegramId)],
       );
     }
 
@@ -216,6 +217,7 @@ export async function saveEventUpdate(
     await sendUpdatedEventCard(
       ctx,
       eventId,
+      String(telegramId),
       `✅ <b>[${fieldLabels[field]}] updated successfully!</b>\n\n`,
     );
   } catch (error) {
@@ -230,33 +232,39 @@ export async function saveEventUpdate(
 export async function sendUpdatedEventCard(
   ctx: Context,
   eventId: number,
+  telegramId: string,
   headerPrefix: string = "",
 ) {
   try {
     // 1. Fetch event details AND linked Google account email
     const evtRes = await query(
       `SELECT 
-     e.id, 
-     e.title, 
-     e.description, 
-     e.location, 
-     e.priority, 
-     e.start_time, 
-     e.end_time,
-     ga.email,
-      (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
-      (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id
-   FROM events e
-   LEFT JOIN google_accounts ga 
-     ON ga.id = COALESCE(
-       e.google_account_id, 
-       (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
-     )
-   WHERE e.id = $1`,
-      [eventId],
+         e.id, 
+         e.title, 
+         e.description, 
+         e.location, 
+         e.priority, 
+         e.start_time, 
+         e.end_time,
+         ga.email,
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id
+       FROM events e
+       JOIN accounts acc ON e.creator_id = acc.id
+       LEFT JOIN google_accounts ga 
+         ON ga.id = COALESCE(
+           e.google_account_id, 
+           (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+         )
+       WHERE e.id = $1 AND acc.telegram_id = $2`,
+      [eventId, telegramId],
     );
 
-    if (evtRes.rows.length === 0) return;
+    // If no row returned, the user does not own this event or it doesn't exist
+    if (evtRes.rows.length === 0) {
+      await ctx.reply("❌ Event not found or unauthorized.");
+      return;
+    }
 
     const evt = evtRes.rows[0];
 
@@ -298,7 +306,7 @@ export async function sendUpdatedEventCard(
 
     const photoToUpload = evt.photo_id || DEFAULT_EVENT_IMAGE;
 
-    // Check if we are inside a callback query (inline button interaction) to edit in-place
+    // Render message (Edit in place or Send New)
     if (ctx.callbackQuery && ctx.callbackQuery.message) {
       try {
         await ctx.editMessageMedia(

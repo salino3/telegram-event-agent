@@ -158,7 +158,7 @@ eventsComposer.callbackQuery(
     }
   },
 );
-// TODO: Restart checking from here
+
 /**
  * Command: /upcoming_events
  * Queries DB for active/imminent events using the end_time fallback logic,
@@ -275,11 +275,14 @@ eventsComposer.callbackQuery(
   /^select_event_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
     const eventId = parseInt(ctx.match[1], 10);
+    const telegramId = ctx.from?.id;
+
+    if (!telegramId) return;
 
     try {
       await ctx.answerCallbackQuery();
       // Render event card with all details and dynamic document button
-      await sendUpdatedEventCard(ctx, eventId);
+      await sendUpdatedEventCard(ctx, eventId, String(telegramId));
     } catch (error) {
       console.error("Error displaying selected event card:", error);
       await ctx.reply("❌ Error fetching event details.");
