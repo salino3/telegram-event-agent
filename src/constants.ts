@@ -9,6 +9,8 @@ export const {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI,
+  // REDIS
+  REDIS_URL,
 } = process.env;
 
 export const PRIORITY_EMOJIS: Record<string, string> = {
