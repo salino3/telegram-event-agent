@@ -13,7 +13,7 @@ googleAuthComposer.command(
     }
 
     // Generate the custom auth URL with the user's Telegram ID as state
-    const authUrl = getAuthUrl(telegramId);
+    const authUrl = await getAuthUrl(telegramId);
     const keyboard = new InlineKeyboard().url(
       "🔗 Connect Google Calendar",
       authUrl,
