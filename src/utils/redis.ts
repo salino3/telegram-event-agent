@@ -1,7 +1,8 @@
 import { createClient } from "redis";
+import { REDIS_URL } from "../constants.js";
 // docker run -d --name redis-local -p 6379:6379 redis:alpine
 
-const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const redisUrl = REDIS_URL || "redis://localhost:6379";
 
 export const redis = createClient({ url: redisUrl });
 
