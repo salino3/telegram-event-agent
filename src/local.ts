@@ -2,6 +2,7 @@ import express from "express";
 import { query } from "./db.js";
 import { bot } from "./bot.js";
 import { oauth2Client } from "./services/google-auth.js";
+import { redis } from "./utils/redis.js";
 import { PORT } from "./constants.js";
 
 // TODO: Add SQL cron job
@@ -21,13 +22,26 @@ app.get("/auth/google/callback", async (req, res) => {
       return res.status(400).send("Missing code or state parameter.");
     }
 
-    const telegramId = String(state); // Matches the state string passed in OAuth URL
+    // 1. CSRF VALIDATION: Fetch telegramId from Redis using the state token
+    const redisKey = `oauth_state:${String(state)}`;
+    const telegramId = await redis.get(redisKey);
 
-    // 1. Retrieve Google OAuth tokens
+    if (!telegramId) {
+      return res
+        .status(403)
+        .send(
+          "Invalid or expired authentication session. Please try linking again from Telegram.",
+        );
+    }
+
+    // 2. Consume the token immediately to prevent replay attacks
+    await redis.del(redisKey);
+
+    // 3. Retrieve Google OAuth tokens
     const { tokens } = await oauth2Client.getToken(code as string);
     oauth2Client.setCredentials(tokens);
 
-    // 2. Retrieve user email from Google UserInfo endpoint
+    // 4. Retrieve user email from Google UserInfo endpoint
     const userInfoResponse = await oauth2Client.request<{ email?: string }>({
       url: "https://www.googleapis.com/oauth2/v2/userinfo",
     });
@@ -38,7 +52,7 @@ app.get("/auth/google/callback", async (req, res) => {
       throw new Error("Could not retrieve email from Google.");
     }
 
-    // 3. Atomically upsert account, calculate default flag, and save google_account
+    // 5. Atomically upsert account, calculate default flag, and save google_account
     const dbRes = await query(
       `WITH target_account AS (
          INSERT INTO accounts (telegram_id, first_name)
@@ -73,7 +87,7 @@ app.get("/auth/google/callback", async (req, res) => {
 
     const isDefault = dbRes.rows[0]?.is_default ?? false;
 
-    // 4. Notify user via Telegram
+    // 6. Notify user via Telegram
     const statusText = isDefault
       ? "🌟 Set as your default calendar."
       : "ℹ️ Linked as an additional account.";
