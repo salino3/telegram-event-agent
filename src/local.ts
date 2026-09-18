@@ -1,4 +1,5 @@
 import express from "express";
+import { webhookCallback } from "grammy";
 import { query } from "./db.js";
 import { bot } from "./bot.js";
 import { oauth2Client } from "./services/google-auth.js";
@@ -107,6 +108,21 @@ app.get("/auth/google/callback", async (req, res) => {
   }
 });
 
+// Mount Telegram Webhook endpoint (Used only in production/webhook mode)
+app.post("/api/bot", (req, res) => {
+  const incomingSecret = req.headers["x-telegram-bot-api-secret-token"];
+  const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+
+  if (expectedSecret && incomingSecret !== expectedSecret) {
+    console.warn(
+      "⚠️ Unauthorized webhook request rejected: Invalid secret token.",
+    );
+    return res.status(401).send("Unauthorized");
+  }
+
+  return webhookCallback(bot, "express")(req, res);
+});
+
 //
 async function main() {
   // Start Express HTTP Server for OAuth Callbacks
@@ -136,12 +152,14 @@ async function main() {
 
   console.log("Webhook deleted. starting bot locally...");
 
-  // Start bot with Long Polling
-  bot.start({
-    onStart: (botInfo) => {
-      console.log(`🤖 Bot @${botInfo.username} started locally!`);
-    },
-  });
+  if (process.env.NODE_ENV === "development") {
+    // Start bot with Long Polling
+    bot.start({
+      onStart: (botInfo) => {
+        console.log(`🤖 Bot @${botInfo.username} started locally!`);
+      },
+    });
+  }
 }
 
 main();
