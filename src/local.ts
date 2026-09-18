@@ -1,9 +1,11 @@
+import "dotenv/config";
 import express from "express";
+import { webhookCallback } from "grammy";
 import { query } from "./db.js";
 import { bot } from "./bot.js";
 import { oauth2Client } from "./services/google-auth.js";
 import { redis } from "./utils/redis.js";
-import { PORT } from "./constants.js";
+import { PORT, TELEGRAM_WEBHOOK_SECRET } from "./constants.js";
 
 // TODO: Add SQL cron job
 // SELECT cron.schedule(
@@ -13,6 +15,7 @@ import { PORT } from "./constants.js";
 // );
 
 const app = express();
+app.use(express.json());
 
 app.get("/auth/google/callback", async (req, res) => {
   try {
@@ -107,15 +110,29 @@ app.get("/auth/google/callback", async (req, res) => {
   }
 });
 
+if (process.env.NODE_ENV !== "development") {
+  // Mount Telegram Webhook endpoint (Used only in production/webhook mode)
+  app.post("/api/bot", (req, res) => {
+    const incomingSecret = req.headers["x-telegram-bot-api-secret-token"];
+
+    if (TELEGRAM_WEBHOOK_SECRET && incomingSecret !== TELEGRAM_WEBHOOK_SECRET) {
+      console.warn(
+        "⚠️ Unauthorized webhook request rejected: Invalid secret token.",
+      );
+      // Even in case of error returning '200' for avoid Telegram send again and again the message
+      return res.status(200).send("Unauthorized");
+    }
+
+    return webhookCallback(bot, "express")(req, res);
+  });
+}
+
 //
 async function main() {
   // Start Express HTTP Server for OAuth Callbacks
   app.listen(PORT, () => {
     console.log(`🌐 OAuth HTTP Server listening on http://localhost:${PORT}`);
   });
-
-  // Tell Telegram to remove the active webhook so we can test locally
-  await bot.api.deleteWebhook({ drop_pending_updates: true });
 
   // Register bot commands in Telegram
   await bot.api.setMyCommands([
@@ -136,12 +153,16 @@ async function main() {
 
   console.log("Webhook deleted. starting bot locally...");
 
-  // Start bot with Long Polling
-  bot.start({
-    onStart: (botInfo) => {
-      console.log(`🤖 Bot @${botInfo.username} started locally!`);
-    },
-  });
+  if (process.env.NODE_ENV === "development") {
+    // Tell Telegram to remove the active webhook so we can test locally
+    await bot.api.deleteWebhook({ drop_pending_updates: true });
+    // Start bot with Long Polling
+    bot.start({
+      onStart: (botInfo) => {
+        console.log(`🤖 Bot @${botInfo.username} started locally!`);
+      },
+    });
+  }
 }
 
 main();

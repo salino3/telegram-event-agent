@@ -5,7 +5,9 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx --watch src/local.ts",
+    "dev": "cross-env NODE_ENV=development tsx --watch src/local.ts",
+    "build": "tsc",
+    "start": "pnpm run build && cross-env NODE_ENV=production  node dist/src/local.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -25,6 +27,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^26.2.0",
     "@types/redis": "^4.0.11",
+    "cross-env": "^7.0.3",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vercel": "^59.1.4"

@@ -1,6 +1,7 @@
 import { createClient } from "redis";
 import { REDIS_URL } from "../constants.js";
 // docker run -d --name redis-local -p 6379:6379 redis:alpine
+// ngrok http 3000
 
 const redisUrl = REDIS_URL || "redis://localhost:6379";
 
