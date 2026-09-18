@@ -5,7 +5,7 @@ import { query } from "./db.js";
 import { bot } from "./bot.js";
 import { oauth2Client } from "./services/google-auth.js";
 import { redis } from "./utils/redis.js";
-import { PORT } from "./constants.js";
+import { PORT, TELEGRAM_WEBHOOK_SECRET } from "./constants.js";
 
 // TODO: Add SQL cron job
 // SELECT cron.schedule(
@@ -114,9 +114,8 @@ if (process.env.NODE_ENV !== "development") {
   // Mount Telegram Webhook endpoint (Used only in production/webhook mode)
   app.post("/api/bot", (req, res) => {
     const incomingSecret = req.headers["x-telegram-bot-api-secret-token"];
-    const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
-    if (expectedSecret && incomingSecret !== expectedSecret) {
+    if (TELEGRAM_WEBHOOK_SECRET && incomingSecret !== TELEGRAM_WEBHOOK_SECRET) {
       console.warn(
         "⚠️ Unauthorized webhook request rejected: Invalid secret token.",
       );

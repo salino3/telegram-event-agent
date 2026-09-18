@@ -3,6 +3,7 @@ dotenv.config();
 
 export const {
   TELEGRAM_BOT_TOKEN,
+  TELEGRAM_WEBHOOK_SECRET,
   DATABASE_URL,
   PORT,
   // GOOGLE
