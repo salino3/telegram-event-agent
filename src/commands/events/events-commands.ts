@@ -216,7 +216,7 @@ eventsComposer.command(
 
 /**
  * Command: /all_events
- * Displays full list with an interactive inline keyboard to delete any event.
+ * Displays full list in chronological order (ASC) with an interactive inline keyboard.
  */
 eventsComposer.command("all_events", async (ctx: CommandContext<Context>) => {
   const telegramId = ctx.from?.id;
@@ -228,7 +228,7 @@ eventsComposer.command("all_events", async (ctx: CommandContext<Context>) => {
        FROM events e
        JOIN accounts acc ON e.creator_id = acc.id
        WHERE acc.telegram_id = $1 AND acc.is_active = TRUE
-       ORDER BY e.start_time DESC`,
+       ORDER BY e.start_time::timestamptz ASC`,
       [String(telegramId)],
     );
 
@@ -241,7 +241,7 @@ eventsComposer.command("all_events", async (ctx: CommandContext<Context>) => {
     const keyboard = new InlineKeyboard();
 
     result.rows.forEach((evt, idx) => {
-      const priorityKey = (evt.priority as string).toLowerCase();
+      const priorityKey = String(evt.priority || "medium").toLowerCase();
       const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
       const formattedDate = new Date(evt.start_time).toLocaleString();
       const itemNum = idx + 1;
