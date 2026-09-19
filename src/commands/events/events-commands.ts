@@ -193,7 +193,15 @@ eventsComposer.command(
       result.rows.forEach((evt, idx) => {
         const priorityKey = String(evt.priority || "medium").toLowerCase();
         const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
-        const formattedDate = new Date(evt.start_time).toLocaleString();
+        const formattedDate = new Date(evt.start_time).toLocaleString("en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        });
         const num = idx + 1;
 
         message += `${num}. ${emoji} <b>${escapeHtml(evt.title)}</b>\n   🗓️ ${formattedDate}\n\n`;
@@ -243,7 +251,15 @@ eventsComposer.command("all_events", async (ctx: CommandContext<Context>) => {
     result.rows.forEach((evt, idx) => {
       const priorityKey = String(evt.priority || "medium").toLowerCase();
       const emoji = PRIORITY_EMOJIS[priorityKey] || "⚪";
-      const formattedDate = new Date(evt.start_time).toLocaleString();
+      const formattedDate = new Date(evt.start_time).toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      });
       const itemNum = idx + 1;
 
       message += `${itemNum}. ${emoji} <b>${escapeHtml(evt.title)}</b>\n   🗓️ ${formattedDate}\n\n`;
