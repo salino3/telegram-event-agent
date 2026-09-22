@@ -11,21 +11,26 @@ startComposer.command("start", async (ctx: CommandContext<Context>) => {
   if (!telegramId) return;
 
   try {
+    // 1. Upsert account details in PostgreSQL
     await query(
       `INSERT INTO accounts (telegram_id, first_name, last_name, is_active)
        VALUES ($1, $2, $3, TRUE)
        ON CONFLICT (telegram_id) 
-       DO UPDATE SET first_name = $2, last_name = $3, is_active = TRUE, deleted_at = NULL;`,
-      [telegramId, firstName, lastName],
+       DO UPDATE SET 
+         first_name = $2, 
+         last_name = $3, 
+         is_active = TRUE, 
+         deleted_at = NULL;`,
+      [String(telegramId), firstName, lastName],
     );
 
-    // Reemplazamos etiquetas de Markdown (* y _) por etiquetas HTML (<b>, <i>)
+    // 2. Send welcome message
     const welcomeMessage =
       `👋 <b>Welcome to Event Manager Bot, ${firstName}!</b>\n\n` +
       `Your account is active. I can help you manage your personal events and appointments easily.\n\n` +
       `📌 <b>Available Commands:</b>\n` +
       `• /new_event - Create a new event or appointment\n` +
-      `• /accounts - Your list accounts\n` +
+      `• /accounts - Your listed accounts\n` +
       `• /connect_google - Connect your Google Calendar account\n` +
       `• /upcoming_events - View all your scheduled upcoming events\n` +
       `• /all_events - View all your events\n` +
