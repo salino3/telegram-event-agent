@@ -5,7 +5,7 @@ import { query } from "./db.js";
 import { bot } from "./bot.js";
 import { oauth2Client } from "./services/google-auth.js";
 import { redis } from "./utils/redis.js";
-import { PORT, TELEGRAM_WEBHOOK_SECRET } from "./constants.js";
+import { NODE_ENV, PORT, TELEGRAM_WEBHOOK_SECRET } from "./constants.js";
 
 // TODO: Add SQL cron job
 // SELECT cron.schedule(
@@ -204,7 +204,7 @@ app.get("/auth/google/callback", async (req, res) => {
 });
 
 //
-if (process.env.NODE_ENV !== "development") {
+if (NODE_ENV !== "development") {
   // Mount Telegram Webhook endpoint (Used only in production/webhook mode)
   app.post("/api/bot", (req, res) => {
     const incomingSecret = req.headers["x-telegram-bot-api-secret-token"];
@@ -247,7 +247,7 @@ async function main() {
 
   console.log("Webhook deleted. starting bot locally...");
 
-  if (process.env.NODE_ENV === "development") {
+  if (NODE_ENV === "development") {
     // Tell Telegram to remove the active webhook so we can test locally
     await bot.api.deleteWebhook({ drop_pending_updates: true });
     // Start bot with Long Polling
