@@ -4,6 +4,7 @@ import { eventsComposer } from "./commands/events/events-commands.js";
 import { accountsComposer } from "./commands/accounts/accounts-commands.js";
 import { googleAuthComposer } from "./commands/google.commands.js";
 import { clearSessionOnCommand } from "./middlewares/user-session.middleware.js";
+import { limitMessageLength } from "./middlewares/char-limit.middleware.js";
 import { TELEGRAM_BOT_TOKEN } from "./constants.js";
 
 const token = TELEGRAM_BOT_TOKEN;
@@ -19,6 +20,7 @@ bot.use(clearSessionOnCommand);
 bot.use(accountsComposer);
 bot.use(googleAuthComposer);
 bot.use(startComposer);
+bot.use(limitMessageLength(100));
 bot.use(eventsComposer);
 
 // Fallback handler for unhandled messages / unrecognized input
