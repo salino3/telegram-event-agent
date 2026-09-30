@@ -1,25 +1,43 @@
 import { Context, NextFunction } from "grammy";
+import { userSessions } from "../session/store.js"; // Adjust import path
+import { WizardStep } from "../types/session.js"; // Adjust import path
 
 /**
- * Creates a middleware that validates the character length of incoming text messages.
- *
- * @param maxLength - Maximum allowed characters in the message text (defaults to 100).
+ * Validates message length dynamically based on the current wizard step.
  */
-export function limitMessageLength(maxLength: number = 100) {
+export function limitMessageLength(defaultMax: number = 100) {
   return async (ctx: Context, next: NextFunction): Promise<void> => {
-    // Extract message text if present
     const messageText = ctx.message?.text;
+    const telegramId = ctx.from?.id;
 
-    // If there's text and it exceeds the maximum allowed length
-    if (messageText && messageText.length > maxLength) {
-      await ctx.reply(
-        `⚠️ Your message is too long! Maximum allowed length is ${maxLength} characters (you sent ${messageText.length}).`,
-      );
-      // Stop the middleware chain execution
-      return;
+    // Skip validation if there's no text message
+    if (!messageText) {
+      return await next();
     }
 
-    // Continue to the command or next middleware
+    // Determine limit based on user's wizard step
+    let allowedMax = defaultMax;
+    if (telegramId) {
+      const session = userSessions.get(telegramId);
+
+      // If user is currently entering or editing a description, allow 300 characters
+      if (
+        session?.step === WizardStep.AWAITING_DESCRIPTION ||
+        (session?.step === WizardStep.AWAITING_EDIT_VALUE &&
+          session?.editingField === "description")
+      ) {
+        allowedMax = 300;
+      }
+    }
+
+    // Validate length
+    if (messageText.length > allowedMax) {
+      await ctx.reply(
+        `⚠️ Your message is too long! Maximum allowed length for this step is ${allowedMax} characters (you sent ${messageText.length}).`,
+      );
+      return; // Block execution
+    }
+
     await next();
   };
 }
