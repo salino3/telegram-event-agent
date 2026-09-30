@@ -421,7 +421,8 @@ eventsComposer.callbackQuery(
       .row()
       .text("📆 Start Time", `edit_field_start_time_${eventId}`)
       .text("🖼️ Image/Media", `edit_field_photo_${eventId}`)
-      .text("📎 Document", `edit_field_document_${eventId}`);
+      .text("📎 Document", `edit_field_document_${eventId}`)
+      .text("🎥 Video", `edit_field_video_${eventId}`);
 
     await ctx.reply("✏️ **Which field would you like to edit?**", {
       reply_markup: editMenuKeyboard,
@@ -434,7 +435,7 @@ eventsComposer.callbackQuery(
  * Callback Query: Trigger Edit Wizard (Select Field to Modify)
  */
 eventsComposer.callbackQuery(
-  /^edit_field_(title|description|location|priority|start_time|photo|document)_(\d+)$/,
+  /^edit_field_(title|description|location|priority|start_time|photo|document|video)_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
     const field = ctx.match[1] as EditingFieldType;
     const eventId = parseInt(ctx.match[2], 10);
@@ -477,6 +478,7 @@ eventsComposer.callbackQuery(
         "📆 Enter the new start date and time (Format: <b>DD-MM-YYYY HH:MM</b>):",
       photo: "📸 Send a new <b>photo/image</b> to update this event:",
       document: "📎 Send a <b>document/PDF</b> to attach to this event:",
+      video: "🎥 Send a new <b>video</b> to update this event:",
     };
 
     await ctx.reply(prompts[field], { parse_mode: "HTML" });
@@ -911,6 +913,49 @@ eventsComposer.on(
         session.editingEventId,
         "document",
         docFileId,
+      );
+    }
+  },
+);
+
+/**
+ * Handle incoming video attachments for Event Editing / Validation
+ */
+eventsComposer.on(
+  "message:video",
+  async (ctx: Filter<Context, "message:video">) => {
+    const telegramId = ctx.from?.id;
+    if (!telegramId) return;
+
+    const session = userSessions.get(telegramId);
+    if (!session) return;
+
+    // Extract video file_id from Telegram context
+    const videoFileId = ctx.message.video.file_id;
+
+    // 1. REJECT IF SENT DURING PHOTO CREATION STEP
+    if (session.step === WizardStep.AWAITING_PHOTO) {
+      await ctx.reply(
+        "⚠️ <b>Invalid media format!</b>\n\n" +
+          "A <b>photo</b> is expected for this step, not a video. " +
+          "Please send an image or press <b>Skip</b>.",
+        { parse_mode: "HTML" },
+      );
+      return;
+    }
+
+    // 2. EVENT EDITING FLOW FOR VIDEOS
+    if (
+      session.step === WizardStep.AWAITING_EDIT_VALUE &&
+      session.editingField === "video" &&
+      session.editingEventId
+    ) {
+      await handleAttachmentUpdate(
+        ctx,
+        telegramId,
+        session.editingEventId,
+        "video",
+        videoFileId,
       );
     }
   },
