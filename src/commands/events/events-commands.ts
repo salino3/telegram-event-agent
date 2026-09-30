@@ -421,7 +421,8 @@ eventsComposer.callbackQuery(
       .row()
       .text("📆 Start Time", `edit_field_start_time_${eventId}`)
       .text("🖼️ Image/Media", `edit_field_photo_${eventId}`)
-      .text("📎 Document", `edit_field_document_${eventId}`);
+      .text("📎 Document", `edit_field_document_${eventId}`)
+      .text("🎥 Video", `edit_field_video_${eventId}`);
 
     await ctx.reply("✏️ **Which field would you like to edit?**", {
       reply_markup: editMenuKeyboard,
@@ -434,7 +435,7 @@ eventsComposer.callbackQuery(
  * Callback Query: Trigger Edit Wizard (Select Field to Modify)
  */
 eventsComposer.callbackQuery(
-  /^edit_field_(title|description|location|priority|start_time|photo|document)_(\d+)$/,
+  /^edit_field_(title|description|location|priority|start_time|photo|document|video)_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
     const field = ctx.match[1] as EditingFieldType;
     const eventId = parseInt(ctx.match[2], 10);
@@ -477,6 +478,7 @@ eventsComposer.callbackQuery(
         "📆 Enter the new start date and time (Format: <b>DD-MM-YYYY HH:MM</b>):",
       photo: "📸 Send a new <b>photo/image</b> to update this event:",
       document: "📎 Send a <b>document/PDF</b> to attach to this event:",
+      video: "🎥 Send a new <b>video</b> to update this event:",
     };
 
     await ctx.reply(prompts[field], { parse_mode: "HTML" });
@@ -574,6 +576,49 @@ eventsComposer.callbackQuery(
     } catch (error) {
       console.error("Error sending attached document:", error);
       await ctx.reply("❌ Failed to retrieve document.");
+    }
+  },
+);
+
+/**
+ * Callback Query: Watch Video attached to an event
+ */
+eventsComposer.callbackQuery(
+  /^watch_video_(\d+)$/,
+  async (ctx: CallbackQueryContext<Context>) => {
+    const eventId = parseInt(ctx.match[1], 10);
+    const telegramId = ctx.from.id;
+
+    try {
+      await ctx.answerCallbackQuery();
+
+      // Retrieve the video file_id from event_attachments
+      const res = await query(
+        `SELECT ea.content 
+         FROM event_attachments ea
+         JOIN events e ON ea.event_id = e.id
+         JOIN accounts acc ON e.creator_id = acc.id
+         WHERE ea.event_id = $1 
+           AND ea.file_type = 'video' 
+           AND acc.telegram_id = $2
+         LIMIT 1`,
+        [eventId, String(telegramId)],
+      );
+
+      if (res.rows.length === 0 || !res.rows[0].content) {
+        await ctx.reply("❌ No video attached to this event.");
+        return;
+      }
+
+      const videoFileId = res.rows[0].content;
+
+      // Send video to user
+      await ctx.replyWithVideo(videoFileId, {
+        caption: "📄 Here is your attached video:",
+      });
+    } catch (error) {
+      console.error("Error sending attached video:", error);
+      await ctx.reply("❌ Failed to retrieve video.");
     }
   },
 );
@@ -911,6 +956,49 @@ eventsComposer.on(
         session.editingEventId,
         "document",
         docFileId,
+      );
+    }
+  },
+);
+
+/**
+ * Handle incoming video attachments for Event Editing / Validation
+ */
+eventsComposer.on(
+  "message:video",
+  async (ctx: Filter<Context, "message:video">) => {
+    const telegramId = ctx.from?.id;
+    if (!telegramId) return;
+
+    const session = userSessions.get(telegramId);
+    if (!session) return;
+
+    // Extract video file_id from Telegram context
+    const videoFileId = ctx.message.video.file_id;
+
+    // 1. REJECT IF SENT DURING PHOTO CREATION STEP
+    if (session.step === WizardStep.AWAITING_PHOTO) {
+      await ctx.reply(
+        "⚠️ <b>Invalid media format!</b>\n\n" +
+          "A <b>photo</b> is expected for this step, not a video. " +
+          "Please send an image or press <b>Skip</b>.",
+        { parse_mode: "HTML" },
+      );
+      return;
+    }
+
+    // 2. EVENT EDITING FLOW FOR VIDEOS
+    if (
+      session.step === WizardStep.AWAITING_EDIT_VALUE &&
+      session.editingField === "video" &&
+      session.editingEventId
+    ) {
+      await handleAttachmentUpdate(
+        ctx,
+        telegramId,
+        session.editingEventId,
+        "video",
+        videoFileId,
       );
     }
   },

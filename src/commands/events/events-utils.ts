@@ -2,13 +2,14 @@ import { Context, InlineKeyboard } from "grammy";
 import { query } from "../../db.js";
 import { updateGoogleCalendarEvent } from "../../services/google-calendar.js";
 import { utilitiesApp } from "../../utils/utilities-app.js";
-import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
+import { userSessions } from "../../session/store.js";
 import {
   EditingFieldType,
+  EventCardRow,
   MultimediaFieldType,
   WizardStep,
 } from "../../types/session.js";
-import { userSessions } from "../../session/store.js";
+import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
 
 const { buildColorKeyboard, escapeHtml } = utilitiesApp();
 
@@ -212,6 +213,7 @@ export async function saveEventUpdate(
       start_time: "Start Time",
       photo: "Photo/Image",
       document: "Document",
+      video: "Video",
     };
 
     await sendUpdatedEventCard(
@@ -232,11 +234,11 @@ export async function saveEventUpdate(
 export async function sendUpdatedEventCard(
   ctx: Context,
   eventId: number,
-  telegramId: string,
+  telegramId: string, // Enforce passing telegramId for authorization
   headerPrefix: string = "",
 ) {
   try {
-    // 1. Fetch event details AND linked Google account email
+    // Fetch event details ONLY if the event belongs to this user (telegramId)
     const evtRes = await query(
       `SELECT 
          e.id, 
@@ -248,7 +250,8 @@ export async function sendUpdatedEventCard(
          e.end_time,
          ga.email,
          (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
-         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id,
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'video' LIMIT 1) AS video_id
        FROM events e
        JOIN accounts acc ON e.creator_id = acc.id
        LEFT JOIN google_accounts ga 
@@ -260,29 +263,36 @@ export async function sendUpdatedEventCard(
       [eventId, telegramId],
     );
 
-    // If no row returned, the user does not own this event or it doesn't exist
     if (evtRes.rows.length === 0) {
       await ctx.reply("❌ Event not found or unauthorized.");
       return;
     }
 
-    const evt = evtRes.rows[0];
+    const evt: EventCardRow = evtRes.rows[0];
 
     // Priority formatting
-    const priorityValue = (evt.priority || "medium").toLowerCase();
-    const priorityEmoji = PRIORITY_EMOJIS[priorityValue] || "🟡";
-    const priorityFormatted = `${priorityEmoji} ${priorityValue.toUpperCase()}`;
+    const priorityValue: string = (evt.priority || "medium").toLowerCase();
+    const priorityEmoji: string = PRIORITY_EMOJIS[priorityValue] || "🟡";
+    const priorityFormatted: string = `${priorityEmoji} ${priorityValue.toUpperCase()}`;
 
     // Date formatting
-    const startDate = new Date(evt.start_time);
-    const formattedDate = startDate.toLocaleString();
+    const startDate: Date = new Date(evt.start_time);
+    const formattedDate: string = startDate.toLocaleString();
 
-    // 2. Format the Email badge line (grey/code style)
-    const emailLine = `📬 <b>Saved To: <code>${
+    // Email badge line
+    const emailLine: string = `📬 <b>Saved To: <code>${
       evt.email ? escapeHtml(evt.email) : "No Calendar Linked"
     }</code></b>\n`;
 
-    // 3. Assemble the caption (Email right under the Title)
+    // Attachment indicators in caption
+    const documentLine: string = evt.document_id
+      ? `\n📄 <b>Document:</b> <i>Attached</i>`
+      : "";
+    const videoLine: string = evt.video_id
+      ? `\n🎥 <b>Video:</b> <i>Attached</i>`
+      : "";
+
+    // Caption text assembly
     const captionText =
       `${headerPrefix}` +
       `📌 <b>${escapeHtml(evt.title)}</b>\n` +
@@ -290,23 +300,28 @@ export async function sendUpdatedEventCard(
       `🚨 <b>Priority:</b> ${priorityFormatted}\n` +
       `📅 <b>Date:</b> ${formattedDate}\n` +
       `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
-      `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}\n` +
-      `📄 <b>Document:</b> <i>${evt.document_id ? "Attached" : "Unattached"}</i>`;
+      `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}` +
+      `${documentLine}` +
+      `${videoLine}`;
 
-    // Keyboard (Notice: Email is NOT included here so it cannot be edited)
+    // Action keyboard assembly
     const actionKeyboard = new InlineKeyboard()
       .text("✏️ Edit", `edit_event_${eventId}`)
       .text("🗑️ Delete", `delete_event_${eventId}`);
 
-    if (evt.document_id) {
-      actionKeyboard
-        .row()
-        .text("📄 Download Document", `download_doc_${eventId}`);
+    if (evt.document_id || evt.video_id) {
+      actionKeyboard.row();
+      if (evt.document_id) {
+        actionKeyboard.text("📄 Download Document", `download_doc_${eventId}`);
+      }
+      if (evt.video_id) {
+        actionKeyboard.text("🎥 Watch Video", `watch_video_${eventId}`);
+      }
     }
 
-    const photoToUpload = evt.photo_id || DEFAULT_EVENT_IMAGE;
+    const photoToUpload: string = evt.photo_id || DEFAULT_EVENT_IMAGE;
 
-    // Render message (Edit in place or Send New)
+    // Send or edit message media in place
     if (ctx.callbackQuery && ctx.callbackQuery.message) {
       try {
         await ctx.editMessageMedia(
@@ -316,9 +331,7 @@ export async function sendUpdatedEventCard(
             caption: captionText,
             parse_mode: "HTML",
           },
-          {
-            reply_markup: actionKeyboard,
-          },
+          { reply_markup: actionKeyboard },
         );
         return;
       } catch (err) {
@@ -329,7 +342,6 @@ export async function sendUpdatedEventCard(
       }
     }
 
-    // Fallback: send a new photo message if editing in place isn't applicable
     await ctx.replyWithPhoto(photoToUpload, {
       caption: captionText,
       parse_mode: "HTML",
