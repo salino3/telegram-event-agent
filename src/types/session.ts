@@ -42,4 +42,18 @@ export interface UserSessionProps {
   videoId?: string;
 }
 
+export interface EventCardRow {
+  id: number;
+  title: string;
+  description: string | null;
+  location: string | null;
+  priority: string | null;
+  start_time: string;
+  end_time: string | null;
+  email: string | null;
+  photo_id: string | null;
+  document_id: string | null;
+  video_id: string | null;
+}
+
 export type TextContextType = Filter<Context, "message:text">;
