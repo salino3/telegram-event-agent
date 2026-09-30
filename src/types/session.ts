@@ -39,6 +39,7 @@ export interface UserSessionProps {
   durationMinutes?: number;
   photoId?: string;
   documentId?: string;
+  videoId?: string;
 }
 
 export type TextContextType = Filter<Context, "message:text">;
