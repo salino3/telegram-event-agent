@@ -16,7 +16,7 @@ export enum WizardStep {
 
 export type PriorityType = "low" | "medium" | "high";
 
-export type MultimediaFieldType = "video" | "photo" | "document";
+export type MultimediaFieldType = "video" | "photo" | "document" | "link";
 
 export type EditingFieldType =
   | "title"

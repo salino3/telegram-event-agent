@@ -421,8 +421,11 @@ eventsComposer.callbackQuery(
       .row()
       .text("📆 Start Time", `edit_field_start_time_${eventId}`)
       .text("🖼️ Image/Media", `edit_field_photo_${eventId}`)
-      .text("📎 Document", `edit_field_document_${eventId}`)
-      .text("🎥 Video", `edit_field_video_${eventId}`);
+      .row()
+      .text("🔗 Link", `edit_field_link_${eventId}`)
+      .text("🎥 Video", `edit_field_video_${eventId}`)
+      .row()
+      .text("📎 Document", `edit_field_document_${eventId}`);
 
     await ctx.reply("✏️ **Which field would you like to edit?**", {
       reply_markup: editMenuKeyboard,
@@ -435,7 +438,7 @@ eventsComposer.callbackQuery(
  * Callback Query: Trigger Edit Wizard (Select Field to Modify)
  */
 eventsComposer.callbackQuery(
-  /^edit_field_(title|description|location|priority|start_time|photo|document|video)_(\d+)$/,
+  /^edit_field_(title|description|location|priority|start_time|photo|document|video|link)_(\d+)$/,
   async (ctx: CallbackQueryContext<Context>) => {
     const field = ctx.match[1] as EditingFieldType;
     const eventId = parseInt(ctx.match[2], 10);
@@ -477,8 +480,9 @@ eventsComposer.callbackQuery(
       start_time:
         "📆 Enter the new start date and time (Format: <b>DD-MM-YYYY HH:MM</b>):",
       photo: "📸 Send a new <b>photo/image</b> to update this event:",
-      document: "📎 Send a <b>document/PDF</b> to attach to this event:",
+      link: `<a href="https://example.com">🔗  Open Resource</a>`,
       video: "🎥 Send a new <b>video</b> to update this event:",
+      document: "📎 Send a <b>document/PDF</b> to attach to this event:",
     };
 
     await ctx.reply(prompts[field], { parse_mode: "HTML" });
