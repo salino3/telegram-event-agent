@@ -11,7 +11,7 @@ import {
 } from "../../types/session.js";
 import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
 
-const { buildColorKeyboard, escapeHtml } = utilitiesApp();
+const { buildColorKeyboard, escapeHtml, isValidUrl } = utilitiesApp();
 
 /**
  * 1. Called after Location is provided or skipped.
@@ -105,9 +105,38 @@ export async function handleAttachmentUpdate(
       return;
     }
 
+    // IF FILE TYPE IS LINK -> SYNC TO GOOGLE CALENDAR
+    if (fileType === "link") {
+      // Query google_event_id for this event
+      const evtRes = await query(
+        `SELECT google_event_id FROM events WHERE id = $1`,
+        [eventId],
+      );
+
+      const googleEventId = evtRes.rows[0]?.google_event_id;
+
+      if (googleEventId) {
+        // Trigger Google Calendar sync with the new link URL!
+        await updateGoogleCalendarEvent({
+          telegramId,
+          eventId,
+          googleEventId,
+          link: fileId, // Pass the new link URL
+        });
+      }
+    }
+
     userSessions.delete(telegramId);
 
-    const label = fileType === "photo" ? "Image" : "Document";
+    const labels: Record<MultimediaFieldType, string> = {
+      photo: "Image",
+      document: "Document",
+      video: "Video",
+      link: "Link",
+    };
+
+    const label: string = labels[fileType] || "Attachment";
+
     await sendUpdatedEventCard(
       ctx,
       eventId,
@@ -212,8 +241,9 @@ export async function saveEventUpdate(
       priority: "Priority",
       start_time: "Start Time",
       photo: "Photo/Image",
-      document: "Document",
+      link: "Link",
       video: "Video",
+      document: "Document",
     };
 
     await sendUpdatedEventCard(
@@ -251,7 +281,8 @@ export async function sendUpdatedEventCard(
          ga.email,
          (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
          (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id,
-         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'video' LIMIT 1) AS video_id
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'video' LIMIT 1) AS video_id,
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'link' LIMIT 1) AS link_id
        FROM events e
        JOIN accounts acc ON e.creator_id = acc.id
        LEFT JOIN google_accounts ga 
@@ -285,11 +316,15 @@ export async function sendUpdatedEventCard(
     }</code></b>\n`;
 
     // Attachment indicators in caption
-    const documentLine: string = evt.document_id
-      ? `\n📄 <b>Document:</b> <i>Attached</i>`
-      : "";
+
     const videoLine: string = evt.video_id
       ? `\n🎥 <b>Video:</b> <i>Attached</i>`
+      : "";
+    const linkLine: string = evt.link_id
+      ? `\n🔗 <b>Link:</b> <i>Attached</i>`
+      : "";
+    const documentLine: string = evt.document_id
+      ? `\n📄 <b>Document:</b> <i>Attached</i>`
       : "";
 
     // Caption text assembly
@@ -301,21 +336,28 @@ export async function sendUpdatedEventCard(
       `📅 <b>Date:</b> ${formattedDate}\n` +
       `📍 <b>Location:</b> ${escapeHtml(evt.location || "N/A")}\n` +
       `📝 <b>Description:</b> ${escapeHtml(evt.description || "N/A")}` +
-      `${documentLine}` +
-      `${videoLine}`;
+      `${videoLine}` +
+      `${linkLine}` +
+      `${documentLine}`;
 
     // Action keyboard assembly
     const actionKeyboard = new InlineKeyboard()
       .text("✏️ Edit", `edit_event_${eventId}`)
       .text("🗑️ Delete", `delete_event_${eventId}`);
 
-    if (evt.document_id || evt.video_id) {
+    if (evt.document_id || evt.video_id || evt.link_id) {
       actionKeyboard.row();
-      if (evt.document_id) {
-        actionKeyboard.text("📄 Download Document", `download_doc_${eventId}`);
+      if (evt.link_id && isValidUrl(evt.link_id)) {
+        actionKeyboard.url("🔗 Open Link", evt.link_id);
+      } else if (evt.link_id) {
+        // Optional fallback callback if link format is invalid for direct url button
+        actionKeyboard.text("🔗 Link", `redirect_link_${eventId}`);
       }
       if (evt.video_id) {
         actionKeyboard.text("🎥 Watch Video", `watch_video_${eventId}`);
+      }
+      if (evt.document_id) {
+        actionKeyboard.text("📄 Download Document", `download_doc_${eventId}`);
       }
     }
 

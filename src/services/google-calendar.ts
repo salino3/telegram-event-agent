@@ -12,6 +12,7 @@ export interface CreateEventInput {
   priority?: string;
   colorId?: string;
   location?: string;
+  link?: string;
   startTime: Date;
   endTime: Date;
 }
@@ -24,6 +25,7 @@ export interface UpdateEventInput {
   description?: string;
   location?: string;
   colorId?: string;
+  link?: string;
   priority?: string;
   startTime?: Date;
   endTime?: Date;
@@ -74,8 +76,10 @@ export async function createGoogleCalendarEvent(
     oauth2Client.setCredentials({ access_token, refresh_token });
 
     const priorityLabel = (input.priority || "medium").toUpperCase();
+    const linkSection = input.link ? `\n🔗 Link: ${input.link}` : "";
+
     const fullDescription =
-      `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
+      `[Priority: ${priorityLabel}]${linkSection}\n\n${input.description || ""}`.trim();
 
     // 3. Create event using the exact account email instead of default primary
     const response = await calendarClient.events.insert({
@@ -119,9 +123,11 @@ export async function updateGoogleCalendarEvent(
   input: UpdateEventInput,
 ): Promise<boolean> {
   try {
-    // Fetch tokens for the event's specific account (or default account if fallback)
+    // Query tokens AND existing DB values for priority, description, and link
     const dbRes = await query(
-      `SELECT ga.access_token, ga.refresh_token, ga.email 
+      `SELECT ga.access_token, ga.refresh_token, ga.email,
+              e.description as existing_desc, e.priority as existing_priority,
+              (SELECT content FROM event_attachments WHERE event_id = e.id AND file_type = 'link' LIMIT 1) as existing_link
        FROM events e
        JOIN accounts a ON e.creator_id = a.id
        LEFT JOIN google_accounts ga 
@@ -140,8 +146,23 @@ export async function updateGoogleCalendarEvent(
       return false;
     }
 
-    const { access_token, refresh_token, email } = dbRes.rows[0];
+    const {
+      access_token,
+      refresh_token,
+      email,
+      existing_desc,
+      existing_priority,
+      existing_link,
+    } = dbRes.rows[0];
+
     oauth2Client.setCredentials({ access_token, refresh_token });
+
+    // Fall back to DB values if input properties are undefined
+    const finalPriority =
+      input.priority !== undefined ? input.priority : existing_priority;
+    const finalDescription =
+      input.description !== undefined ? input.description : existing_desc;
+    const finalLink = input.link !== undefined ? input.link : existing_link;
 
     const userTimeZone =
       Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -150,11 +171,11 @@ export async function updateGoogleCalendarEvent(
     if (input.title) requestBody.summary = input.title;
     if (input.location !== undefined) requestBody.location = input.location;
     if (input.colorId !== undefined) requestBody.colorId = input.colorId;
-
-    if (input.description || input.priority) {
-      const priorityLabel = (input.priority || "medium").toUpperCase();
+    if (finalDescription || finalPriority || finalLink) {
+      const priorityLabel = (finalPriority || "medium").toUpperCase();
+      const linkSection = finalLink ? `\n🔗 Link: ${finalLink}` : "";
       requestBody.description =
-        `[Priority: ${priorityLabel}]\n\n${input.description || ""}`.trim();
+        `[Priority: ${priorityLabel}]${linkSection}\n\n${finalDescription || ""}`.trim();
     }
 
     if (input.startTime) {
