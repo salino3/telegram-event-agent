@@ -40,6 +40,7 @@ export interface UserSessionProps {
   photoId?: string;
   documentId?: string;
   videoId?: string;
+  linkId?: string;
 }
 
 export interface EventCardRow {
@@ -54,6 +55,7 @@ export interface EventCardRow {
   photo_id: string | null;
   document_id: string | null;
   video_id: string | null;
+  link_id: string | null;
 }
 
 export type TextContextType = Filter<Context, "message:text">;
