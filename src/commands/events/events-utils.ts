@@ -300,7 +300,7 @@ export async function sendUpdatedEventCard(
       ? `\n🎥 <b>Video:</b> <i>Attached</i>`
       : "";
     const linkLine: string = evt.link_id
-      ? `\n🔗 <b>Link:</b> <a href="${escapeHtml(evt.link_id)}">${escapeHtml(evt.link_id)}</a>`
+      ? `\n🔗 <b>Link:</b> <i>Attached</i>`
       : "";
     const documentLine: string = evt.document_id
       ? `\n📄 <b>Document:</b> <i>Attached</i>`
@@ -327,7 +327,7 @@ export async function sendUpdatedEventCard(
     if (evt.document_id || evt.video_id || evt.link_id) {
       actionKeyboard.row();
       if (evt.link_id) {
-        actionKeyboard.text("📄 Link", `edit_field_link_${eventId}`);
+        actionKeyboard.url("🔗 Open Link", evt.link_id);
       }
       if (evt.video_id) {
         actionKeyboard.text("🎥 Watch Video", `watch_video_${eventId}`);
