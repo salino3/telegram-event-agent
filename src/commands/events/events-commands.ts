@@ -815,28 +815,40 @@ async function handleTextMessage(ctx: TextContextType) {
     }
   }
 
-  // 6. STEP: AWAITING_EDIT_VALUE (Text edits for Title, Description, Location, Start Time)
+  // 6. STEP: AWAITING_EDIT_VALUE (Text edits for Title, Description, Location, Start Time, Link)
   if (
     session.step === WizardStep.AWAITING_EDIT_VALUE &&
     session.editingEventId &&
     session.editingField
   ) {
-    // If the user sends text while editing 'photo' or 'document', reply with an error:
-    if (
-      session.editingField === "photo" ||
-      session.editingField === "document"
-    ) {
-      await ctx.reply(
-        `❌ Please send a valid ${session.editingField} file (or photo).`,
-      );
-      return;
-    }
-
-    const value = ctx.message.text;
+    const value = ctx.message.text.trim();
     const eventId = session.editingEventId;
     const field = session.editingField;
 
-    let updatedValue: any = value;
+    // 1. REJECT TEXT INPUT FOR BINARY MEDIA ATTACHMENTS
+    if (field === "photo" || field === "document" || field === "video") {
+      await ctx.reply(`❌ Please send a valid ${field} file instead of text.`);
+      return;
+    }
+
+    // 2. ROUTE 'link' TO ATTACHMENTS TABLE
+    if (field === "link") {
+      const urlPattern = /^(https?:\/\/)[^\s/$.?#].[^\s]*$/i;
+      if (!urlPattern.test(value)) {
+        await ctx.reply(
+          "❌ <b>Invalid URL format!</b>\n\nPlease enter a valid link starting with <code>http://</code> or <code>https://</code>.",
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+
+      // Call handleAttachmentUpdate (which writes to event_attachments table)
+      await handleAttachmentUpdate(ctx, telegramId, eventId, "link", value);
+      return;
+    }
+
+    // 3. HANDLE REGULAR COLUMNS (title, description, location, start_time)
+    let updatedValue: string = value;
 
     if (field === "start_time") {
       const parsed = parseCustomDate(value);
@@ -847,7 +859,7 @@ async function handleTextMessage(ctx: TextContextType) {
       updatedValue = parsed.toISOString();
     }
 
-    // Execute central update function
+    // Execute central update function for standard columns on the `events` table
     await saveEventUpdate(ctx, telegramId, eventId, field, updatedValue);
   }
 }

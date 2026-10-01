@@ -107,7 +107,15 @@ export async function handleAttachmentUpdate(
 
     userSessions.delete(telegramId);
 
-    const label = fileType === "photo" ? "Image" : "Document";
+    const labels: Record<MultimediaFieldType, string> = {
+      photo: "Image",
+      document: "Document",
+      video: "Video",
+      link: "Link",
+    };
+
+    const label: string = labels[fileType] || "Attachment";
+
     await sendUpdatedEventCard(
       ctx,
       eventId,
@@ -212,8 +220,9 @@ export async function saveEventUpdate(
       priority: "Priority",
       start_time: "Start Time",
       photo: "Photo/Image",
-      document: "Document",
+      link: "Link",
       video: "Video",
+      document: "Document",
     };
 
     await sendUpdatedEventCard(
