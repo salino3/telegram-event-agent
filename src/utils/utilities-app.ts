@@ -106,11 +106,25 @@ export const utilitiesApp = () => {
     return `${day}-${month}-${year}`;
   }
 
+  //
+  function isValidUrl(urlString: string): boolean {
+    try {
+      const url = new URL(urlString);
+      if (!["http:", "https:"].includes(url.protocol)) return false;
+
+      // Ensure it has a valid hostname with a dot (e.g. google.com, not just "Hi!")
+      return url.hostname.includes(".");
+    } catch {
+      return false;
+    }
+  }
+
   return {
     parseCustomDate,
     checkRequiredFields,
     buildColorKeyboard,
     escapeHtml,
     getExampleDate,
+    isValidUrl,
   };
 };

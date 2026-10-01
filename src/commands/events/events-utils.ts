@@ -11,7 +11,7 @@ import {
 } from "../../types/session.js";
 import { DEFAULT_EVENT_IMAGE, PRIORITY_EMOJIS } from "../../constants.js";
 
-const { buildColorKeyboard, escapeHtml } = utilitiesApp();
+const { buildColorKeyboard, escapeHtml, isValidUrl } = utilitiesApp();
 
 /**
  * 1. Called after Location is provided or skipped.
@@ -103,6 +103,27 @@ export async function handleAttachmentUpdate(
     if (res.rows.length === 0) {
       await ctx.reply("❌ Account not found. Please run /start first.");
       return;
+    }
+
+    // IF FILE TYPE IS LINK -> SYNC TO GOOGLE CALENDAR
+    if (fileType === "link") {
+      // Query google_event_id for this event
+      const evtRes = await query(
+        `SELECT google_event_id FROM events WHERE id = $1`,
+        [eventId],
+      );
+
+      const googleEventId = evtRes.rows[0]?.google_event_id;
+
+      if (googleEventId) {
+        // Trigger Google Calendar sync with the new link URL!
+        await updateGoogleCalendarEvent({
+          telegramId,
+          eventId,
+          googleEventId,
+          link: fileId, // Pass the new link URL
+        });
+      }
     }
 
     userSessions.delete(telegramId);
@@ -326,8 +347,11 @@ export async function sendUpdatedEventCard(
 
     if (evt.document_id || evt.video_id || evt.link_id) {
       actionKeyboard.row();
-      if (evt.link_id) {
+      if (evt.link_id && isValidUrl(evt.link_id)) {
         actionKeyboard.url("🔗 Open Link", evt.link_id);
+      } else if (evt.link_id) {
+        // Optional fallback callback if link format is invalid for direct url button
+        actionKeyboard.text("🔗 Link", `redirect_link_${eventId}`);
       }
       if (evt.video_id) {
         actionKeyboard.text("🎥 Watch Video", `watch_video_${eventId}`);
