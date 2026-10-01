@@ -232,14 +232,14 @@ async function main() {
   await bot.api.setMyCommands([
     { command: "start", description: "Initialize user session" },
     { command: "accounts", description: "Your list accounts" },
-    {
-      command: "connect_google",
-      description: "Connect your Google Calendar account",
-    },
     { command: "new_event", description: "Create a new appointment or event" },
     {
       command: "upcoming_events",
       description: "List all scheduled upcoming events",
+    },
+    {
+      command: "connect_google",
+      description: "Connect your Google Calendar account",
     },
     { command: "all_events", description: "List all events" },
     { command: "cancel", description: "Cancel current active process" },
