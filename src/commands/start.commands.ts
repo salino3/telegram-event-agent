@@ -31,8 +31,8 @@ startComposer.command("start", async (ctx: CommandContext<Context>) => {
       `📌 <b>Available Commands:</b>\n` +
       `• /new_event - Create a new event or appointment\n` +
       `• /accounts - Your listed accounts\n` +
-      `• /connect_google - Connect your Google Calendar account\n` +
       `• /upcoming_events - View all your scheduled upcoming events\n` +
+      `• /connect_google - Connect your Google Calendar account\n` +
       `• /all_events - View all your events\n` +
       `• /cancel - Cancel the current active process\n\n` +
       `💡 <i>Tip: You can also tap the</i> <b>[/]</b> <i>button next to the chat bar to open the commands menu at any time.</i>`;
