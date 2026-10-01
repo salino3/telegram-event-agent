@@ -480,7 +480,7 @@ eventsComposer.callbackQuery(
       start_time:
         "📆 Enter the new start date and time (Format: <b>DD-MM-YYYY HH:MM</b>):",
       photo: "📸 Send a new <b>photo/image</b> to update this event:",
-      link: `<a href="https://example.com">🔗  Open Resource</a>`,
+      link: "🔗 Enter the new <b>link</b>:",
       video: "🎥 Send a new <b>video</b> to update this event:",
       document: "📎 Send a <b>document/PDF</b> to attach to this event:",
     };
