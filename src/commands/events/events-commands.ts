@@ -43,40 +43,6 @@ for (const route of eventCallbackRoutes) {
 }
 
 /**
- * Callback Query: Process Priority Selection during Editing
- */
-eventsComposer.callbackQuery(
-  /^update_priority_(low|medium|high)$/,
-  async (ctx: CallbackQueryContext<Context>) => {
-    const telegramId = ctx.from.id;
-    const session = userSessions.get(telegramId);
-
-    if (
-      !session ||
-      session.step !== WizardStep.AWAITING_EDIT_VALUE ||
-      session.editingField !== "priority" ||
-      !session.editingEventId
-    ) {
-      await ctx.answerCallbackQuery({
-        text: "⚠️ Session expired or invalid. Please click Edit on the event card again.",
-        show_alert: true,
-      });
-      return;
-    }
-
-    const newPriority = ctx.match[1] as PriorityType;
-    const eventId = session.editingEventId;
-
-    await ctx.answerCallbackQuery({
-      text: `Priority updated to ${newPriority.toUpperCase()}`,
-    });
-
-    // Save and sync priority update
-    await saveEventUpdate(ctx, telegramId, eventId, "priority", newPriority);
-  },
-);
-
-/**
  * Callback Query: Download Document attached to an event
  */
 eventsComposer.callbackQuery(

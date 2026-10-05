@@ -1,5 +1,5 @@
 import { CallbackQueryContext, Context, InlineKeyboard } from "grammy";
-import { sendUpdatedEventCard } from "../events-utils.js";
+import { saveEventUpdate, sendUpdatedEventCard } from "../events-utils.js";
 import { userSessions } from "../../../session/store.js";
 import {
   EditingFieldType,
@@ -161,4 +161,37 @@ export async function colorEventPriorityCQB(
     parse_mode: "HTML",
     reply_markup: priorityKeyboard,
   });
+}
+
+/**
+ * Callback Query: Process Priority Selection during Editing
+ */
+export async function updatePriorityEventCQB(
+  ctx: CallbackQueryContext<Context>,
+) {
+  const telegramId = ctx.from.id;
+  const session = userSessions.get(telegramId);
+
+  if (
+    !session ||
+    session.step !== WizardStep.AWAITING_EDIT_VALUE ||
+    session.editingField !== "priority" ||
+    !session.editingEventId
+  ) {
+    await ctx.answerCallbackQuery({
+      text: "⚠️ Session expired or invalid. Please click Edit on the event card again.",
+      show_alert: true,
+    });
+    return;
+  }
+
+  const newPriority = ctx.match[1] as PriorityType;
+  const eventId = session.editingEventId;
+
+  await ctx.answerCallbackQuery({
+    text: `Priority updated to ${newPriority.toUpperCase()}`,
+  });
+
+  // Save and sync priority update
+  await saveEventUpdate(ctx, telegramId, eventId, "priority", newPriority);
 }

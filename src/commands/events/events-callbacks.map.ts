@@ -9,6 +9,7 @@ import {
   editFieldEvent,
   priorityEventTypeCQB,
   selectEventCQB,
+  updatePriorityEventCQB,
 } from "./functions/put.js";
 
 export type CallbackHandler = (
@@ -56,6 +57,11 @@ export const eventCallbackRoutes: CallbackRoute[] = [
     trigger:
       /^edit_field_(title|description|location|priority|start_time|photo|document|video|link)_(\d+)$/,
     handler: editFieldEvent,
+  },
+  {
+    type: "callback",
+    trigger: /^update_priority_(low|medium|high)$/,
+    handler: updatePriorityEventCQB,
   },
 
   {
