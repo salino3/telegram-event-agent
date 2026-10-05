@@ -230,67 +230,6 @@ eventsComposer.callbackQuery(
 );
 
 /**
- * Callback Query: Delete Event safely across multiple devices
- */
-eventsComposer.callbackQuery(
-  /^delete_event_(\d+)$/,
-  async (ctx: CallbackQueryContext<Context>) => {
-    const eventId = parseInt(ctx.match[1], 10);
-    const telegramId = ctx.from.id;
-
-    try {
-      // Single Atomic SQL Sentence: Deletes attachments & event, returning Google Sync details
-      const deleteRes = await query(
-        `WITH deleted_event AS (
-        DELETE FROM events
-        WHERE id = $1 
-          AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)
-        RETURNING google_event_id, google_account_id
-      )
-      SELECT 
-        de.google_event_id, 
-        ga.access_token, 
-        ga.refresh_token, 
-        ga.email
-      FROM deleted_event de
-      LEFT JOIN google_accounts ga 
-        ON de.google_account_id = ga.id`,
-        [eventId, String(telegramId)],
-      );
-
-      // If no rows returned, either deleted on another device or unauthorized
-      if (deleteRes.rows.length === 0) {
-        await ctx.answerCallbackQuery({
-          text: "Event not found or already deleted.",
-        });
-        return;
-      }
-
-      const { google_event_id, access_token, refresh_token, email } =
-        deleteRes.rows[0];
-
-      // Delete from Google Calendar if synced
-      if (google_event_id && access_token) {
-        await deleteGoogleCalendarEventDirect({
-          googleEventId: google_event_id,
-          accessToken: access_token,
-          refreshToken: refresh_token,
-          email: email,
-        });
-      }
-
-      await ctx.answerCallbackQuery({ text: "🗑️ Event deleted successfully!" });
-      await ctx.reply(
-        "🗑️ Event has been removed from your calendar and database.",
-      );
-    } catch (error) {
-      console.error("Error deleting event:", error);
-      await ctx.answerCallbackQuery({ text: "Failed to delete event." });
-    }
-  },
-);
-
-/**
  * Callback Query Handler: Priority Selection
  */
 eventsComposer.callbackQuery(
