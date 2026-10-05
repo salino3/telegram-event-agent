@@ -1,5 +1,5 @@
 import { CallbackQueryContext, Context } from "grammy";
-import { skipColorCBQ, skipPhotoCBQ } from "./functions/skips.js";
+import { skipColorCBQ, skipFieldCBQ, skipPhotoCBQ } from "./functions/skips.js";
 
 export type CallbackHandler = (
   ctx: CallbackQueryContext<Context>,
@@ -13,4 +13,5 @@ export interface CallbackRoute {
 export const eventCallbackRoutes: CallbackRoute[] = [
   { trigger: "skip_photo", handler: skipPhotoCBQ },
   { trigger: "skip_color", handler: skipColorCBQ },
+  { trigger: "skip_field", handler: skipFieldCBQ },
 ];

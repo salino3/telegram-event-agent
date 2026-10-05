@@ -1,6 +1,6 @@
 import { CallbackQueryContext, Context, InlineKeyboard } from "grammy";
 import { userSessions } from "../../../session/store.js";
-import { proceedAfterPhoto } from "../events-utils.js";
+import { proceedAfterLocation, proceedAfterPhoto } from "../events-utils.js";
 import { WizardStep } from "../../../types/session.js";
 
 /**
@@ -40,4 +40,42 @@ export async function skipColorCBQ(ctx: CallbackQueryContext<Context>) {
     parse_mode: "HTML",
     reply_markup: priorityKeyboard,
   });
+}
+
+/**
+ * Callback Query Handler: Skip Optional Fields
+ */
+export async function skipFieldCBQ(ctx: CallbackQueryContext<Context>) {
+  const telegramId = ctx.from.id;
+  const session = userSessions.get(telegramId);
+
+  if (!session) {
+    await ctx.answerCallbackQuery({
+      text: "Session expired. Type /new_event again.",
+    });
+    return;
+  }
+
+  await ctx.answerCallbackQuery();
+
+  if (session.step === WizardStep.AWAITING_DESCRIPTION) {
+    session.description = undefined;
+    session.step = WizardStep.AWAITING_LOCATION;
+
+    const skipKeyboard = new InlineKeyboard().text("➡️ Skip", "skip_field");
+    await ctx.reply(
+      "📍 Send the <b>location</b> for the event (or press Skip):",
+      {
+        parse_mode: "HTML",
+        reply_markup: skipKeyboard,
+      },
+    );
+    return;
+  }
+
+  if (session.step === WizardStep.AWAITING_LOCATION) {
+    session.location = undefined;
+    await proceedAfterLocation(ctx, telegramId, session);
+    return;
+  }
 }

@@ -99,47 +99,6 @@ eventsComposer.callbackQuery(
 );
 
 /**
- * Callback Query Handler: Skip Optional Fields
- */
-eventsComposer.callbackQuery(
-  "skip_field",
-  async (ctx: CallbackQueryContext<Context>) => {
-    const telegramId = ctx.from.id;
-    const session = userSessions.get(telegramId);
-
-    if (!session) {
-      await ctx.answerCallbackQuery({
-        text: "Session expired. Type /new_event again.",
-      });
-      return;
-    }
-
-    await ctx.answerCallbackQuery();
-
-    if (session.step === WizardStep.AWAITING_DESCRIPTION) {
-      session.description = undefined;
-      session.step = WizardStep.AWAITING_LOCATION;
-
-      const skipKeyboard = new InlineKeyboard().text("➡️ Skip", "skip_field");
-      await ctx.reply(
-        "📍 Send the <b>location</b> for the event (or press Skip):",
-        {
-          parse_mode: "HTML",
-          reply_markup: skipKeyboard,
-        },
-      );
-      return;
-    }
-
-    if (session.step === WizardStep.AWAITING_LOCATION) {
-      session.location = undefined;
-      await proceedAfterLocation(ctx, telegramId, session);
-      return;
-    }
-  },
-);
-
-/**
  * Command: /upcoming_events
  * Queries DB for active/imminent events using the end_time fallback logic,
  * displays a consolidated text list, and generates inline pushpin buttons.
