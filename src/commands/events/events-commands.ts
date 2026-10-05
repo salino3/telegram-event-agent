@@ -13,6 +13,7 @@ import {
   deleteGoogleCalendarEventDirect,
 } from "../../services/google-calendar.js";
 import { utilitiesApp } from "../../utils/utilities-app.js";
+import { eventCallbackRoutes } from "./events-callbacks.map.js";
 import {
   handleAttachmentUpdate,
   proceedAfterLocation,
@@ -20,17 +21,22 @@ import {
   saveEventUpdate,
   sendUpdatedEventCard,
 } from "./events-utils.js";
-import { PRIORITY_EMOJIS } from "../../constants.js";
 import {
   EditingFieldType,
   PriorityType,
   TextContextType,
   WizardStep,
 } from "../../types/session.js";
+import { PRIORITY_EMOJIS } from "../../constants.js";
 
 export const eventsComposer = new Composer();
 
 const { parseCustomDate, escapeHtml, getExampleDate } = utilitiesApp();
+
+// Register all triggers (Strings and RegExps) in a single loop
+for (const { trigger, handler } of eventCallbackRoutes) {
+  eventsComposer.callbackQuery(trigger, handler);
+}
 
 /**
  * Command: /new_event
@@ -77,32 +83,6 @@ eventsComposer.callbackQuery(
     if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
 
     session.colorId = ctx.match[1];
-    session.step = WizardStep.AWAITING_PRIORITY;
-
-    await ctx.answerCallbackQuery();
-    const priorityKeyboard = new InlineKeyboard()
-      .text("🟢 Low", "priority_low")
-      .text("🟡 Medium", "priority_medium")
-      .text("🔴 High", "priority_high");
-
-    await ctx.reply("🚨 Select the <b>priority level</b>:", {
-      parse_mode: "HTML",
-      reply_markup: priorityKeyboard,
-    });
-  },
-);
-
-/**
- * Callback: Skip Color Selection
- */
-eventsComposer.callbackQuery(
-  "skip_color",
-  async (ctx: CallbackQueryContext<Context>) => {
-    const telegramId = ctx.from.id;
-    const session = userSessions.get(telegramId);
-    if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
-
-    session.colorId = undefined;
     session.step = WizardStep.AWAITING_PRIORITY;
 
     await ctx.answerCallbackQuery();
@@ -520,24 +500,6 @@ eventsComposer.callbackQuery(
 
     // Save and sync priority update
     await saveEventUpdate(ctx, telegramId, eventId, "priority", newPriority);
-  },
-);
-
-/**
- * Callback Query: Skip Photo Upload
- */
-eventsComposer.callbackQuery(
-  "skip_photo",
-  async (ctx: CallbackQueryContext<Context>) => {
-    const telegramId = ctx.from.id;
-    const session = userSessions.get(telegramId);
-    if (!session || session.step !== WizardStep.AWAITING_PHOTO) return;
-
-    session.photoId = undefined;
-    await ctx.answerCallbackQuery();
-
-    // Proceed to Color or Priority
-    await proceedAfterPhoto(ctx, telegramId, session);
   },
 );
 
