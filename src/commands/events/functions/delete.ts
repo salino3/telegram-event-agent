@@ -1,4 +1,4 @@
-import { CallbackQueryContext, Context } from "grammy";
+import { CallbackQueryContext, CommandContext, Context } from "grammy";
 import { userSessions } from "../../../session/store.js";
 import { deleteGoogleCalendarEventDirect } from "../../../services/google-calendar.js";
 import { query } from "../../../db.js";
@@ -6,9 +6,7 @@ import { query } from "../../../db.js";
 /**
  * Command: /cancel
  */
-export async function cancelEventProcessCBQ(
-  ctx: CallbackQueryContext<Context>,
-) {
+export async function cancelEventProcessCBQ(ctx: CommandContext<Context>) {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 

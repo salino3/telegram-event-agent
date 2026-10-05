@@ -33,28 +33,14 @@ export const eventsComposer = new Composer();
 
 const { parseCustomDate, escapeHtml, getExampleDate } = utilitiesApp();
 
-// Register all triggers (Strings and RegExps) in a single loop
-for (const { trigger, handler } of eventCallbackRoutes) {
-  eventsComposer.callbackQuery(trigger, handler);
+// Register commands and callback queries based on route type
+for (const route of eventCallbackRoutes) {
+  if (route.type === "command" && typeof route.trigger === "string") {
+    eventsComposer.command(route.trigger, route.handler);
+  } else if (route.type === "callback") {
+    eventsComposer.callbackQuery(route.trigger, route.handler);
+  }
 }
-
-/**
- * Command: /new_event
- */
-eventsComposer.command("new_event", async (ctx: CommandContext<Context>) => {
-  const telegramId = ctx.from?.id;
-  if (!telegramId) return;
-
-  userSessions.delete(telegramId);
-  userSessions.set(telegramId, { step: WizardStep.AWAITING_TITLE });
-
-  await ctx.reply(
-    "📝 <b>Event Creation</b>\n" +
-      "💡 <i>You can send /cancel at any time to abort the process.</i>\n\n" +
-      "📌 Please send the title for your new event:",
-    { parse_mode: "HTML" },
-  );
-});
 
 /**
  * Callback: Color Selection
