@@ -43,61 +43,6 @@ for (const route of eventCallbackRoutes) {
 }
 
 /**
- * Callback Query: Trigger Edit Wizard (Select Field to Modify)
- */
-eventsComposer.callbackQuery(
-  /^edit_field_(title|description|location|priority|start_time|photo|document|video|link)_(\d+)$/,
-  async (ctx: CallbackQueryContext<Context>) => {
-    const field = ctx.match[1] as EditingFieldType;
-    const eventId = parseInt(ctx.match[2], 10);
-    const telegramId = ctx.from.id;
-
-    // Get existing session OR create a new one for editing
-    let session = userSessions.get(telegramId);
-    if (!session) {
-      session = { step: WizardStep.AWAITING_EDIT_VALUE };
-      userSessions.set(telegramId, session);
-    }
-
-    // Store targeted field & event ID in user session state
-    session.editingEventId = eventId;
-    session.editingField = field;
-    session.step = WizardStep.AWAITING_EDIT_VALUE;
-
-    await ctx.answerCallbackQuery();
-
-    // If editing priority, display the button keyboard directly
-    if (field === "priority") {
-      const priorityKeyboard = new InlineKeyboard()
-        .text("🟢 Low", "update_priority_low")
-        .text("🟡 Medium", "update_priority_medium")
-        .text("🔴 High", "update_priority_high");
-
-      await ctx.reply("🚨 Select the new priority level:", {
-        reply_markup: priorityKeyboard,
-      });
-      return;
-    }
-
-    // Prompt the user for input based on the chosen field
-    const prompts: Record<EditingFieldType, string> = {
-      title: "📌 Enter the new <b>title</b>:",
-      description: "📄 Enter the new <b>description</b>:",
-      location: "📍 Enter the new <b>location</b>:",
-      priority: "",
-      start_time:
-        "📆 Enter the new start date and time (Format: <b>DD-MM-YYYY HH:MM</b>):",
-      photo: "📸 Send a new <b>photo/image</b> to update this event:",
-      link: "🔗 Enter the new <b>link</b>:",
-      video: "🎥 Send a new <b>video</b> to update this event:",
-      document: "📎 Send a <b>document/PDF</b> to attach to this event:",
-    };
-
-    await ctx.reply(prompts[field], { parse_mode: "HTML" });
-  },
-);
-
-/**
  * Callback Query: Process Priority Selection during Editing
  */
 eventsComposer.callbackQuery(

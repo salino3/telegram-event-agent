@@ -6,6 +6,7 @@ import { allEventCQB, upcomingEventsCQB } from "./functions/get.js";
 import {
   colorEventPriorityCQB,
   editEventCQB,
+  editFieldEvent,
   priorityEventTypeCQB,
   selectEventCQB,
 } from "./functions/put.js";
@@ -50,6 +51,13 @@ export const eventCallbackRoutes: CallbackRoute[] = [
     trigger: /^edit_event_(\d+)$/,
     handler: editEventCQB,
   },
+  {
+    type: "callback",
+    trigger:
+      /^edit_field_(title|description|location|priority|start_time|photo|document|video|link)_(\d+)$/,
+    handler: editFieldEvent,
+  },
+
   {
     type: "callback",
     trigger: /^priority_(low|medium|high)$/,
