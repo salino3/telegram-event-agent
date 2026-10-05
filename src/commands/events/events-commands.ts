@@ -43,32 +43,6 @@ for (const route of eventCallbackRoutes) {
 }
 
 /**
- * Callback: Color Selection
- */
-eventsComposer.callbackQuery(
-  /^color_(\d+)$/,
-  async (ctx: CallbackQueryContext<Context>) => {
-    const telegramId = ctx.from.id;
-    const session = userSessions.get(telegramId);
-    if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
-
-    session.colorId = ctx.match[1];
-    session.step = WizardStep.AWAITING_PRIORITY;
-
-    await ctx.answerCallbackQuery();
-    const priorityKeyboard = new InlineKeyboard()
-      .text("🟢 Low", "priority_low")
-      .text("🟡 Medium", "priority_medium")
-      .text("🔴 High", "priority_high");
-
-    await ctx.reply("🚨 Select the <b>priority level</b>:", {
-      parse_mode: "HTML",
-      reply_markup: priorityKeyboard,
-    });
-  },
-);
-
-/**
  * Callback Query: Main "Edit" button on event card
  */
 eventsComposer.callbackQuery(

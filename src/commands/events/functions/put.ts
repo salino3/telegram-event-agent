@@ -1,4 +1,4 @@
-import { CallbackQueryContext, Context } from "grammy";
+import { CallbackQueryContext, Context, InlineKeyboard } from "grammy";
 import { sendUpdatedEventCard } from "../events-utils.js";
 import { userSessions } from "../../../session/store.js";
 import { PriorityType, WizardStep } from "../../../types/session.js";
@@ -47,4 +47,29 @@ export async function priorityEventTypeCQB(ctx: CallbackQueryContext<Context>) {
       "📆 Enter the <b>start date and time</b> (Format: DD-MM-YYYY HH:MM):",
     { parse_mode: "HTML" },
   );
+}
+
+/**
+ * Callback: Color Selection
+ */
+export async function colorEventPriorityCQB(
+  ctx: CallbackQueryContext<Context>,
+) {
+  const telegramId = ctx.from.id;
+  const session = userSessions.get(telegramId);
+  if (!session || session.step !== WizardStep.AWAITING_COLOR) return;
+
+  session.colorId = ctx.match[1];
+  session.step = WizardStep.AWAITING_PRIORITY;
+
+  await ctx.answerCallbackQuery();
+  const priorityKeyboard = new InlineKeyboard()
+    .text("🟢 Low", "priority_low")
+    .text("🟡 Medium", "priority_medium")
+    .text("🔴 High", "priority_high");
+
+  await ctx.reply("🚨 Select the <b>priority level</b>:", {
+    parse_mode: "HTML",
+    reply_markup: priorityKeyboard,
+  });
 }
