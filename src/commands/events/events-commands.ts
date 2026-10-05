@@ -86,49 +86,6 @@ eventsComposer.callbackQuery(
 );
 
 /**
- * Callback Query: Watch Video attached to an event
- */
-eventsComposer.callbackQuery(
-  /^watch_video_(\d+)$/,
-  async (ctx: CallbackQueryContext<Context>) => {
-    const eventId = parseInt(ctx.match[1], 10);
-    const telegramId = ctx.from.id;
-
-    try {
-      await ctx.answerCallbackQuery();
-
-      // Retrieve the video file_id from event_attachments
-      const res = await query(
-        `SELECT ea.content 
-         FROM event_attachments ea
-         JOIN events e ON ea.event_id = e.id
-         JOIN accounts acc ON e.creator_id = acc.id
-         WHERE ea.event_id = $1 
-           AND ea.file_type = 'video' 
-           AND acc.telegram_id = $2
-         LIMIT 1`,
-        [eventId, String(telegramId)],
-      );
-
-      if (res.rows.length === 0 || !res.rows[0].content) {
-        await ctx.reply("❌ No video attached to this event.");
-        return;
-      }
-
-      const videoFileId = res.rows[0].content;
-
-      // Send video to user
-      await ctx.replyWithVideo(videoFileId, {
-        caption: "📄 Here is your attached video:",
-      });
-    } catch (error) {
-      console.error("Error sending attached video:", error);
-      await ctx.reply("❌ Failed to retrieve video.");
-    }
-  },
-);
-
-/**
  * Global Text Handler for State Machine Inputs (Wizard Flow)
  */
 async function handleTextMessage(ctx: TextContextType) {

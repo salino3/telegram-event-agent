@@ -10,6 +10,7 @@ import {
   priorityEventTypeCQB,
   selectEventCQB,
   updatePriorityEventCQB,
+  watchVideoEventCQB,
 } from "./functions/put.js";
 
 export type CallbackHandler = (
@@ -62,6 +63,11 @@ export const eventCallbackRoutes: CallbackRoute[] = [
     type: "callback",
     trigger: /^update_priority_(low|medium|high)$/,
     handler: updatePriorityEventCQB,
+  },
+  {
+    type: "callback",
+    trigger: /^watch_video_(\d+)$/,
+    handler: watchVideoEventCQB,
   },
 
   {

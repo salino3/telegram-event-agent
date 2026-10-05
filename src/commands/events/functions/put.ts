@@ -1,4 +1,5 @@
 import { CallbackQueryContext, Context, InlineKeyboard } from "grammy";
+import { query } from "../../../db.js";
 import { saveEventUpdate, sendUpdatedEventCard } from "../events-utils.js";
 import { userSessions } from "../../../session/store.js";
 import {
@@ -194,4 +195,44 @@ export async function updatePriorityEventCQB(
 
   // Save and sync priority update
   await saveEventUpdate(ctx, telegramId, eventId, "priority", newPriority);
+}
+
+/**
+ * Callback Query: Watch Video attached to an event
+ */
+export async function watchVideoEventCQB(ctx: CallbackQueryContext<Context>) {
+  const eventId = parseInt(ctx.match[1], 10);
+  const telegramId = ctx.from.id;
+
+  try {
+    await ctx.answerCallbackQuery();
+
+    // Retrieve the video file_id from event_attachments
+    const res = await query(
+      `SELECT ea.content 
+         FROM event_attachments ea
+         JOIN events e ON ea.event_id = e.id
+         JOIN accounts acc ON e.creator_id = acc.id
+         WHERE ea.event_id = $1 
+           AND ea.file_type = 'video' 
+           AND acc.telegram_id = $2
+         LIMIT 1`,
+      [eventId, String(telegramId)],
+    );
+
+    if (res.rows.length === 0 || !res.rows[0].content) {
+      await ctx.reply("❌ No video attached to this event.");
+      return;
+    }
+
+    const videoFileId = res.rows[0].content;
+
+    // Send video to user
+    await ctx.replyWithVideo(videoFileId, {
+      caption: "📄 Here is your attached video:",
+    });
+  } catch (error) {
+    console.error("Error sending attached video:", error);
+    await ctx.reply("❌ Failed to retrieve video.");
+  }
 }
