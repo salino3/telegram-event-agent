@@ -3,6 +3,7 @@ import { skipColorCBQ, skipFieldCBQ, skipPhotoCBQ } from "./functions/skips.js";
 import { cancelEventProcessCBQ, deleteEventCQB } from "./functions/delete.js";
 import { newEventCQB } from "./functions/post.js";
 import { allEventCQB, upcomingEventsCQB } from "./functions/get.js";
+import { selectEventCQB } from "./functions/put.js";
 
 export type CallbackHandler = (
   ctx: CallbackQueryContext<Context>,
@@ -34,6 +35,11 @@ export const eventCallbackRoutes: CallbackRoute[] = [
   { type: "callback", trigger: "skip_photo", handler: skipPhotoCBQ },
   { type: "callback", trigger: "skip_color", handler: skipColorCBQ },
   { type: "callback", trigger: "skip_field", handler: skipFieldCBQ },
+  {
+    type: "callback",
+    trigger: /^select_event_(\d+)$/,
+    handler: selectEventCQB,
+  },
   {
     type: "callback",
     trigger: /^delete_event_(\d+)$/,
