@@ -24,6 +24,41 @@ export async function selectEventCQB(ctx: CallbackQueryContext<Context>) {
 }
 
 /**
+ * Callback Query: Main "Edit" button on event card
+ */
+export async function editEventCQB(ctx: CallbackQueryContext<Context>) {
+  const eventId = ctx.match[1];
+  const telegramId = ctx.from.id;
+
+  // Ensure user session exists when opening the edit menu
+  if (!userSessions.has(telegramId)) {
+    userSessions.set(telegramId, { step: WizardStep.AWAITING_EDIT_VALUE });
+  }
+
+  await ctx.answerCallbackQuery();
+
+  const editMenuKeyboard = new InlineKeyboard()
+    .text("📌 Title", `edit_field_title_${eventId}`)
+    .text("📄 Description", `edit_field_description_${eventId}`)
+    .row()
+    .text("📍 Location", `edit_field_location_${eventId}`)
+    .text("🚨 Priority", `edit_field_priority_${eventId}`)
+    .row()
+    .text("📆 Start Time", `edit_field_start_time_${eventId}`)
+    .text("🖼️ Image/Media", `edit_field_photo_${eventId}`)
+    .row()
+    .text("🔗 Link", `edit_field_link_${eventId}`)
+    .text("🎥 Video", `edit_field_video_${eventId}`)
+    .row()
+    .text("📎 Document", `edit_field_document_${eventId}`);
+
+  await ctx.reply("✏️ **Which field would you like to edit?**", {
+    reply_markup: editMenuKeyboard,
+    parse_mode: "Markdown",
+  });
+}
+
+/**
  * Callback Query Handler: Priority Selection
  */
 export async function priorityEventTypeCQB(ctx: CallbackQueryContext<Context>) {
