@@ -69,35 +69,6 @@ eventsComposer.callbackQuery(
 );
 
 /**
- * Callback Query Handler: Priority Selection
- */
-eventsComposer.callbackQuery(
-  /^priority_(low|medium|high)$/,
-  async (ctx: CallbackQueryContext<Context>) => {
-    const telegramId = ctx.from.id;
-    const session = userSessions.get(telegramId);
-
-    if (!session || session.step !== WizardStep.AWAITING_PRIORITY) {
-      await ctx.answerCallbackQuery({
-        text: "Session expired. Type /new_event again.",
-      });
-      return;
-    }
-
-    const selectedPriority = ctx.match[1] as PriorityType;
-    session.priority = selectedPriority;
-    session.step = WizardStep.AWAITING_DATE;
-
-    await ctx.answerCallbackQuery();
-    await ctx.editMessageText(
-      `Selected Priority: <b>${selectedPriority.toUpperCase()}</b>\n\n` +
-        "📆 Enter the <b>start date and time</b> (Format: DD-MM-YYYY HH:MM):",
-      { parse_mode: "HTML" },
-    );
-  },
-);
-
-/**
  * Callback Query: Main "Edit" button on event card
  */
 eventsComposer.callbackQuery(
