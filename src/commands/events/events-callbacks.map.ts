@@ -5,6 +5,7 @@ import { newEventCQB } from "./functions/post.js";
 import { allEventCQB, upcomingEventsCQB } from "./functions/get.js";
 import {
   colorEventPriorityCQB,
+  downloadDocEventCQB,
   editEventCQB,
   editFieldEvent,
   priorityEventTypeCQB,
@@ -69,7 +70,11 @@ export const eventCallbackRoutes: CallbackRoute[] = [
     trigger: /^watch_video_(\d+)$/,
     handler: watchVideoEventCQB,
   },
-
+  {
+    type: "callback",
+    trigger: /^download_doc_(\d+)$/,
+    handler: downloadDocEventCQB,
+  },
   {
     type: "callback",
     trigger: /^priority_(low|medium|high)$/,

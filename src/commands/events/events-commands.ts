@@ -43,49 +43,6 @@ for (const route of eventCallbackRoutes) {
 }
 
 /**
- * Callback Query: Download Document attached to an event
- */
-eventsComposer.callbackQuery(
-  /^download_doc_(\d+)$/,
-  async (ctx: CallbackQueryContext<Context>) => {
-    const eventId = parseInt(ctx.match[1], 10);
-    const telegramId = ctx.from.id;
-
-    try {
-      await ctx.answerCallbackQuery();
-
-      // Retrieve the document file_id from event_attachments
-      const res = await query(
-        `SELECT ea.content 
-         FROM event_attachments ea
-         JOIN events e ON ea.event_id = e.id
-         JOIN accounts acc ON e.creator_id = acc.id
-         WHERE ea.event_id = $1 
-           AND ea.file_type = 'document' 
-           AND acc.telegram_id = $2
-         LIMIT 1`,
-        [eventId, String(telegramId)],
-      );
-
-      if (res.rows.length === 0 || !res.rows[0].content) {
-        await ctx.reply("❌ No document attached to this event.");
-        return;
-      }
-
-      const docFileId = res.rows[0].content;
-
-      // Send document to user
-      await ctx.replyWithDocument(docFileId, {
-        caption: "📄 Here is your attached document:",
-      });
-    } catch (error) {
-      console.error("Error sending attached document:", error);
-      await ctx.reply("❌ Failed to retrieve document.");
-    }
-  },
-);
-
-/**
  * Global Text Handler for State Machine Inputs (Wizard Flow)
  */
 async function handleTextMessage(ctx: TextContextType) {
