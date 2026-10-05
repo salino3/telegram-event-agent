@@ -42,6 +42,8 @@ for (const route of eventCallbackRoutes) {
   }
 }
 
+//* TODO: create a file for event listener functions
+
 /**
  * Global Text Handler for State Machine Inputs (Wizard Flow)
  */
