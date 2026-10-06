@@ -1,7 +1,6 @@
 import { CommandContext, Context, InlineKeyboard } from "grammy";
 import { query } from "../../../db.js";
 import { utilitiesApp } from "../../../utils/utilities-app.js";
-import { aiChatSessions } from "../../../session/store.js";
 import { PRIORITY_EMOJIS } from "../../../constants.js";
 
 const { escapeHtml } = utilitiesApp();
@@ -125,19 +124,4 @@ export async function upcomingEventsCQB(ctx: CommandContext<Context>) {
     console.error("Error fetching upcoming events:", error);
     await ctx.reply("Failed to fetch upcoming events from database.");
   }
-}
-
-/**
- * Command: /ai
- * Activates AI conversational mode.
- */
-export async function aiCQB(ctx: CommandContext<Context>) {
-  const telegramId = ctx.from?.id;
-  if (!telegramId) return;
-
-  aiChatSessions.add(telegramId);
-  await ctx.reply(
-    "🤖 <b>AI Mode Activated!</b>\nAsk me about your schedule (e.g., <i>'Check my dentist appointment'</i>).\nSend /cancel to exit AI mode.",
-    { parse_mode: "HTML" },
-  );
 }

@@ -2,7 +2,7 @@ import { CallbackQueryContext, CommandContext, Context } from "grammy";
 import { skipColorCBQ, skipFieldCBQ, skipPhotoCBQ } from "./functions/skips.js";
 import { cancelEventProcessCBQ, deleteEventCQB } from "./functions/delete.js";
 import { newEventCQB } from "./functions/post.js";
-import { aiCQB, allEventCQB, upcomingEventsCQB } from "./functions/get.js";
+import { allEventCQB, upcomingEventsCQB } from "./functions/get.js";
 import {
   colorEventPriorityCQB,
   downloadDocEventCQB,
@@ -13,6 +13,7 @@ import {
   updatePriorityEventCQB,
   watchVideoEventCQB,
 } from "./functions/put.js";
+import { aiCQB } from "./chatbot-functions/chatbot-get.js";
 
 export type CallbackHandler = (
   ctx: CallbackQueryContext<Context>,
