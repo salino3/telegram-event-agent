@@ -1,17 +1,7 @@
-import {
-  CommandContext,
-  Composer,
-  Context,
-  Filter,
-  InlineKeyboard,
-} from "grammy";
-import { CallbackQueryContext } from "grammy/web";
+import { Composer, Context, Filter, InlineKeyboard } from "grammy";
 import { query } from "../../db.js";
 import { userSessions } from "../../session/store.js";
-import {
-  createGoogleCalendarEvent,
-  deleteGoogleCalendarEventDirect,
-} from "../../services/google-calendar.js";
+import { createGoogleCalendarEvent } from "../../services/google-calendar.js";
 import { utilitiesApp } from "../../utils/utilities-app.js";
 import { eventCallbackRoutes } from "./events-callbacks.map.js";
 import {
@@ -19,14 +9,8 @@ import {
   proceedAfterLocation,
   proceedAfterPhoto,
   saveEventUpdate,
-  sendUpdatedEventCard,
 } from "./events-utils.js";
-import {
-  EditingFieldType,
-  PriorityType,
-  TextContextType,
-  WizardStep,
-} from "../../types/session.js";
+import { TextContextType, WizardStep } from "../../types/session.js";
 import { PRIORITY_EMOJIS } from "../../constants.js";
 
 export const eventsComposer = new Composer();
