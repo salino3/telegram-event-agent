@@ -35,7 +35,7 @@ export async function generateSqlQuery(userPrompt: string): Promise<string> {
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: userPrompt },
           ],
-          temperature: 0.1,
+          temperature: 0.1, // to force deterministic, low-creativity responses—ideal for strict code and SQL generation.
         }),
       },
     );
