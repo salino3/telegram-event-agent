@@ -7,7 +7,7 @@ if (!DATABASE_URL) {
 
 // Neon HTTP/Websocket Serverless Pool Connection
 export const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: DATABASE_URL,
 });
 
 export function query(text: string, params?: any[]): Promise<QueryResult<any>> {
