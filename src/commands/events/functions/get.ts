@@ -137,7 +137,7 @@ export async function aiCQB(ctx: CommandContext<Context>) {
 
   aiChatSessions.add(telegramId);
   await ctx.reply(
-    "🤖 <b>Groq AI Mode Activated!</b>\nAsk me about your schedule (e.g., <i>'Check my dentist appointment'</i>).\nSend /cancel to exit AI mode.",
+    "🤖 <b>AI Mode Activated!</b>\nAsk me about your schedule (e.g., <i>'Check my dentist appointment'</i>).\nSend /cancel to exit AI mode.",
     { parse_mode: "HTML" },
   );
 }

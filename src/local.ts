@@ -145,6 +145,10 @@ async function main() {
       description: "List all scheduled upcoming events",
     },
     {
+      command: "ai",
+      description: "Active AI mode",
+    },
+    {
       command: "connect_google",
       description: "Connect your Google Calendar account",
     },
