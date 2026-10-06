@@ -3,6 +3,9 @@ import { queryReadOnly } from "../../../db.js";
 import { generateSqlQuery } from "../../../services/groq.js";
 import { sendUpdatedEventCard } from "../events-utils.js";
 
+// Priority Ordering: If a user is in the middle of creating an event (Wizard Form),
+//  the wizard takes precedence over AI queries so they don't accidentally query Groq
+//  while filling out event fields.
 export async function handleAiUserPrompt(ctx: Context) {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
