@@ -56,8 +56,12 @@ export async function handleAiUserPrompt(ctx: Context) {
     for (const row of eventsRes.rows) {
       await sendUpdatedEventCard(ctx, row.id, String(telegramId));
     }
-  } catch (error) {
-    console.error("AI Prompt Handling Error:", error);
+  } catch (error: any) {
+    console.error("AI Prompt Detailed Error:", {
+      message: error?.message,
+      stack: error?.stack,
+      errorObject: error,
+    });
     await ctx.reply("⚠️ An error occurred while searching your schedule.");
   }
 }
