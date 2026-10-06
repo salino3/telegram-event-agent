@@ -1,5 +1,5 @@
 import { CallbackQueryContext, CommandContext, Context } from "grammy";
-import { userSessions } from "../../../session/store.js";
+import { aiChatSessions, userSessions } from "../../../session/store.js";
 import { deleteGoogleCalendarEventDirect } from "../../../services/google-calendar.js";
 import { query } from "../../../db.js";
 
@@ -10,10 +10,23 @@ export async function cancelEventProcessCBQ(ctx: CommandContext<Context>) {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 
-  // Check if user has an active session in the wizard
+  let cancelledAnything = false;
+
+  // Check & exit AI Chat session
+  if (aiChatSessions.has(telegramId)) {
+    aiChatSessions.delete(telegramId);
+    cancelledAnything = true;
+  }
+
+  // Check & clear active event creation wizard session
   if (userSessions.has(telegramId)) {
     userSessions.delete(telegramId); // 🗑️ Clear session state from memory
-    await ctx.reply("❌ Event creation process cancelled.");
+    cancelledAnything = true;
+  }
+
+  // Respond based on whether anything was active
+  if (cancelledAnything) {
+    await ctx.reply("❌ Active process/AI session cancelled.");
   } else {
     await ctx.reply("ℹ️ You have no active process to cancel.");
   }
@@ -22,7 +35,6 @@ export async function cancelEventProcessCBQ(ctx: CommandContext<Context>) {
 /**
  * Callback Query: Delete Event safely across multiple devices
  */
-
 export async function deleteEventCQB(ctx: CallbackQueryContext<Context>) {
   const eventId = parseInt(ctx.match[1], 10);
   const telegramId = ctx.from.id;

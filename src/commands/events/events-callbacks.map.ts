@@ -13,6 +13,7 @@ import {
   updatePriorityEventCQB,
   watchVideoEventCQB,
 } from "./functions/put.js";
+import { aiCQB } from "./chatbot-functions/chatbot-get.js";
 
 export type CallbackHandler = (
   ctx: CallbackQueryContext<Context>,
@@ -39,6 +40,11 @@ export const eventCallbackRoutes: CallbackRoute[] = [
     type: "command",
     trigger: "all_events",
     handler: allEventCQB,
+  },
+  {
+    type: "command",
+    trigger: "ai",
+    handler: aiCQB,
   },
   // Callbacks
   { type: "callback", trigger: "skip_photo", handler: skipPhotoCBQ },

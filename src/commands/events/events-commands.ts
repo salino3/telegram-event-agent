@@ -1,17 +1,13 @@
 import {
-  CommandContext,
   Composer,
   Context,
   Filter,
   InlineKeyboard,
+  NextFunction,
 } from "grammy";
-import { CallbackQueryContext } from "grammy/web";
 import { query } from "../../db.js";
-import { userSessions } from "../../session/store.js";
-import {
-  createGoogleCalendarEvent,
-  deleteGoogleCalendarEventDirect,
-} from "../../services/google-calendar.js";
+import { aiChatSessions, userSessions } from "../../session/store.js";
+import { createGoogleCalendarEvent } from "../../services/google-calendar.js";
 import { utilitiesApp } from "../../utils/utilities-app.js";
 import { eventCallbackRoutes } from "./events-callbacks.map.js";
 import {
@@ -19,14 +15,9 @@ import {
   proceedAfterLocation,
   proceedAfterPhoto,
   saveEventUpdate,
-  sendUpdatedEventCard,
 } from "./events-utils.js";
-import {
-  EditingFieldType,
-  PriorityType,
-  TextContextType,
-  WizardStep,
-} from "../../types/session.js";
+import { TextContextType, WizardStep } from "../../types/session.js";
+import { handleAiUserPrompt } from "./chatbot-functions/chatbot-event-listeners.js";
 import { PRIORITY_EMOJIS } from "../../constants.js";
 
 export const eventsComposer = new Composer();
@@ -46,12 +37,22 @@ for (const route of eventCallbackRoutes) {
 
 /**
  * Global Text Handler for State Machine Inputs (Wizard Flow)
+ * NEXT means is done with this middleware 'bot.use(EXAMPLE)' go ahead
  */
-async function handleTextMessage(ctx: TextContextType) {
+async function handleTextMessage(ctx: TextContextType, next: NextFunction) {
   const telegramId = ctx.from.id;
-  if (!telegramId) return;
+  if (!telegramId) return next();
   const session = userSessions.get(telegramId);
-  if (!session) return;
+
+  if (aiChatSessions.has(telegramId) && !session) {
+    await handleAiUserPrompt(ctx);
+    return;
+  }
+
+  if (!session) return next();
+
+  // Ensure message text exists before running wizard steps
+  if (!ctx.message?.text) return next();
 
   // 1. STEP: TITLE
   if (session.step === WizardStep.AWAITING_TITLE) {
