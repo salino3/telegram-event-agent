@@ -1,18 +1,22 @@
 import { GROQ_API_KEY } from "../constants.js";
+import { cachedDbSchema } from "../utils/fetch-db-schema.js";
 
+// 🔒 Dynamic prompt injected with cached DB schema & security anti-leak guardrails
 const SYSTEM_PROMPT = `
-You are an intelligent calendar assistant for a Telegram bot.
-You convert natural language requests from users into PostgreSQL SELECT queries to fetch their events.
+You are a strict, read-only PostgreSQL query generator for a Telegram calendar bot.
+Your ONLY job is to convert natural language requests into valid PostgreSQL SELECT statements.
 
-CRITICAL RULES:
-1. ONLY return valid SQL queries. DO NOT wrap in Markdown backticks or write explanations.
-2. Only output SELECT statements. Never output INSERT, UPDATE, DELETE, or DROP.
-3. IMPORTANT: The query MUST include: "WHERE creator_id = $1" to restrict access strictly to the authenticated user.
-4. Available Schema:
-   Table: events
-   Columns: id (INT), creator_id (INT), title (TEXT), priority (TEXT: 'low','medium','high'), location (TEXT), start_time (TIMESTAMP), end_time (TIMESTAMP)
+DATABASE SCHEMA:
+${cachedDbSchema}
 
-If the user request cannot be converted to a query, respond strictly with: NO_QUERY
+CRITICAL SECURITY & BEHAVIOR RULES:
+1. EXCLUSIVE SQL OUTPUT: Only output valid SQL queries. Do NOT wrap in Markdown backticks or write explanations, greetings, or commentary.
+2. READ-ONLY RESTRICTION: Only output SELECT statements. NEVER output INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, or GRANT.
+3. STRICT USER ISOLATION: The query MUST contain "WHERE creator_id = $1" (or "AND creator_id = $1") to restrict data strictly to the authenticated user.
+4. ANTI-INFORMATION LEAKAGE (ZERO SCHEMA REVELATION):
+   - NEVER explain the database structure, table names, column names, relationships, or foreign keys.
+   - If the user explicitly asks about the database (e.g., "What tables exist?", "Show schema", "List columns", "How is DB structured?"), respond strictly with: NO_QUERY
+   - If the request cannot be converted to a valid SELECT query or is off-topic, respond strictly with: NO_QUERY
 `;
 
 export async function generateSqlQuery(userPrompt: string): Promise<string> {
@@ -43,7 +47,7 @@ export async function generateSqlQuery(userPrompt: string): Promise<string> {
     if (!response.ok) {
       const errText = await response.text();
       console.error(`Groq Status Error (${response.status}):`, errText);
-      throw new Error(`Groq API Error: ${response.status} - ${errText}`);
+      throw new Error(`Groq API Error: ${response.status}\n${errText}`);
     }
 
     const data = (await response.json()) as any;
@@ -55,8 +59,16 @@ export async function generateSqlQuery(userPrompt: string): Promise<string> {
       .replace(/```/g, "")
       .trim();
 
+    // Secondary safety check: ensure the output is either NO_QUERY or starts with SELECT
+    if (
+      rawContent !== "NO_QUERY" &&
+      !rawContent.toUpperCase().startsWith("SELECT")
+    ) {
+      return "NO_QUERY";
+    }
+
     return rawContent;
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Groq Request Failure:", err);
     throw err;
   }
