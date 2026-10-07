@@ -1,7 +1,10 @@
 import { Context } from "grammy";
 import { queryReadOnly } from "../../../db.js";
 import { generateSqlQuery } from "../../../services/groq.js";
+import { utilitiesApp } from "../../../utils/utilities-app.js";
 import { sendUpdatedEventCard } from "../events-utils.js";
+
+const { escapeHtml } = utilitiesApp();
 
 // Priority Ordering: If a user is in the middle of creating an event (Wizard Form),
 //  the wizard takes precedence over AI queries so they don't accidentally query Groq
@@ -83,14 +86,19 @@ export async function handleAiUserPrompt(ctx: Context) {
     }
 
     // 6. CASE C: Generic row formatting fallback (multi-column non-event SELECTs)
-    let summaryText = "📊 **Query Results:**\n\n";
+    let summaryText = "📊 <b>Query Results:</b>\n\n";
+
     for (const row of eventsRes.rows) {
       summaryText +=
         Object.entries(row)
-          .map(([k, v]) => `• **${k}**: ${v}`)
+          .map(
+            ([k, v]) =>
+              `• <b>${escapeHtml(k)}:</b> ${escapeHtml(String(v ?? "N/A"))}`,
+          )
           .join("\n") + "\n\n";
     }
-    await ctx.reply(summaryText, { parse_mode: "Markdown" });
+
+    await ctx.reply(summaryText, { parse_mode: "HTML" });
   } catch (error: any) {
     console.error("AI Prompt Detailed Error:", {
       message: error?.message,
