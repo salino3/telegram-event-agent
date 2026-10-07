@@ -1,7 +1,10 @@
 import { Context } from "grammy";
 import { queryReadOnly } from "../../../db.js";
 import { generateSqlQuery } from "../../../services/groq.js";
+import { utilitiesApp } from "../../../utils/utilities-app.js";
 import { sendUpdatedEventCard } from "../events-utils.js";
+
+const { escapeHtml } = utilitiesApp();
 
 // Priority Ordering: If a user is in the middle of creating an event (Wizard Form),
 //  the wizard takes precedence over AI queries so they don't accidentally query Groq
@@ -46,16 +49,56 @@ export async function handleAiUserPrompt(ctx: Context) {
     const eventsRes = await queryReadOnly(sqlQuery, [internalAccountId]);
 
     if (eventsRes.rows.length === 0) {
-      await ctx.reply("🔍 I couldn't find any events matching your request.");
+      await ctx.reply("🔍 I couldn't find any data matching your request.");
       return;
     }
 
-    await ctx.reply(`🤖 I found ${eventsRes.rows.length} matching event(s):`);
+    const firstRow = eventsRes.rows[0];
 
-    // 4. Render native event cards with [ ✏️ Edit ] and [ 🗑️ Delete ] buttons
-    for (const row of eventsRes.rows) {
-      await sendUpdatedEventCard(ctx, row.id, String(telegramId));
+    // 4. CASE A: Check if the query returned an event list (has 'id')
+    if ("id" in firstRow) {
+      await ctx.reply(`🤖 I found ${eventsRes.rows.length} matching event(s):`);
+
+      for (const row of eventsRes.rows) {
+        await sendUpdatedEventCard(ctx, row.id, String(telegramId));
+      }
+      return;
     }
+
+    // 5. CASE B: Handle Aggregate Queries (e.g., COUNT(*), SUM, MAX, MIN)
+    // Example: SELECT COUNT(*) FROM events ... -> returns { count: '5' }
+    const keys = Object.keys(firstRow);
+
+    if (keys.length === 1) {
+      const singleValue = firstRow[keys[0]];
+
+      // If user asked for count/how many
+      if (keys[0].toLowerCase().includes("count")) {
+        await ctx.reply(`📊 You have **${singleValue}** matching event(s).`, {
+          parse_mode: "Markdown",
+        });
+      } else {
+        await ctx.reply(`📊 Result: **${singleValue}**`, {
+          parse_mode: "Markdown",
+        });
+      }
+      return;
+    }
+
+    // 6. CASE C: Generic row formatting fallback (multi-column non-event SELECTs)
+    let summaryText = "📊 <b>Query Results:</b>\n\n";
+
+    for (const row of eventsRes.rows) {
+      summaryText +=
+        Object.entries(row)
+          .map(
+            ([k, v]) =>
+              `• <b>${escapeHtml(k)}:</b> ${escapeHtml(String(v ?? "N/A"))}`,
+          )
+          .join("\n") + "\n\n";
+    }
+
+    await ctx.reply(summaryText, { parse_mode: "HTML" });
   } catch (error: any) {
     console.error("AI Prompt Detailed Error:", {
       message: error?.message,
