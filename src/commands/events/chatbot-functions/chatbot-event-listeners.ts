@@ -4,7 +4,7 @@ import { generateSqlQuery } from "../../../services/groq.js";
 import { utilitiesApp } from "../../../utils/utilities-app.js";
 import { sendUpdatedEventCard } from "../events-utils.js";
 
-const { escapeHtml } = utilitiesApp();
+const { escapeHtml, sanitizeInput } = utilitiesApp();
 
 // Priority Ordering: If a user is in the middle of creating an event (Wizard Form),
 //  the wizard takes precedence over AI queries so they don't accidentally query Groq
@@ -15,6 +15,15 @@ export async function handleAiUserPrompt(ctx: Context) {
 
   const userPrompt = ctx.message?.text;
   if (!userPrompt) return;
+
+  if (userPrompt.length > 500) {
+    await ctx.reply(
+      "⚠️ Your message exceeds the 500-character limit. Please keep your messages shorter.",
+    );
+    return;
+  }
+
+  const sanitizedTextInput = sanitizeInput(userPrompt, 500);
 
   try {
     await ctx.replyWithChatAction("typing");
@@ -33,7 +42,7 @@ export async function handleAiUserPrompt(ctx: Context) {
     const internalAccountId = accountRes.rows[0].id;
 
     // 2. Ask Groq for the SQL SELECT query
-    const sqlQuery = await generateSqlQuery(userPrompt);
+    const sqlQuery = await generateSqlQuery(sanitizedTextInput);
 
     if (
       sqlQuery === "NO_QUERY" ||

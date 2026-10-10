@@ -135,7 +135,7 @@ export const utilitiesApp = () => {
         // 3. Remove invisible Unicode formatting characters (such as Zero-Width Space \u200B)
         .replace(/[\u200B-\u200D\uFEFF]/g, "")
         // 4. Prevent role simulation (system/developer instructions or delimiter tags)
-        .replace(/(system:|developer:|assistant:|human:|user:)/gi, "")
+        // .replace(/(system:|developer:|assistant:|human:|user:)/gi, "")
         // 5. Neutralize typical Prompt Injection / Jailbreak phrases
         .replace(
           /(ignore\s+(all\s+)?previous\s+instructions|forget\s+(all\s+)?prior\s+instructions|you\s+are\s+now\s+in\s+DAN\s+mode)/gi,
