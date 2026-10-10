@@ -1,5 +1,11 @@
-import { GROQ_API_KEY } from "../constants.js";
+import { createGroq } from "@ai-sdk/groq";
+import { generateText } from "ai";
 import { cachedDbSchema } from "../utils/fetch-db-schema.js";
+import { GROQ_API_KEY } from "../constants.js";
+
+const groq = createGroq({
+  apiKey: GROQ_API_KEY,
+});
 
 // 🔒 Dynamic prompt injected with cached DB schema & security anti-leak guardrails
 const SYSTEM_PROMPT = `
@@ -19,39 +25,26 @@ CRITICAL SECURITY & BEHAVIOR RULES:
    - If the request cannot be converted to a valid SELECT query or is off-topic, respond strictly with: NO_QUERY
 `;
 
+export const agent = {
+  // apiKey: GROQ_API_KEY,
+  model: groq("openai/gpt-oss-120b"),
+  systemPrompt: SYSTEM_PROMPT,
+};
+
 export async function generateSqlQuery(userPrompt: string): Promise<string> {
   if (!GROQ_API_KEY) {
     throw new Error("GROQ_API_KEY is not configured in .env");
   }
 
   try {
-    const response = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "openai/gpt-oss-120b",
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.1, // to force deterministic, low-creativity responses—ideal for strict code and SQL generation.
-        }),
-      },
-    );
+    const response = await generateText({
+      model: agent.model,
+      system: agent.systemPrompt,
+      prompt: userPrompt,
+      temperature: 0.1, // to force deterministic, low-creativity responses—ideal for strict code and SQL generation.
+    });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`Groq Status Error (${response.status}):`, errText);
-      throw new Error(`Groq API Error: ${response.status}\n${errText}`);
-    }
-
-    const data = (await response.json()) as any;
-    let rawContent = data.choices[0]?.message?.content?.trim() || "NO_QUERY";
+    let rawContent = response.text?.trim() || "NO_QUERY";
 
     // Clean markdown code blocks if the model includes them despite prompt rules
     rawContent = rawContent
