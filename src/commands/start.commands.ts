@@ -31,6 +31,7 @@ startComposer.command("start", async (ctx: CommandContext<Context>) => {
       `📌 <b>Available Commands:</b>\n` +
       `• /new_event - Create a new event or appointment\n` +
       `• /accounts - Your listed accounts\n` +
+      `• /ai - Active AI mode\n` +
       `• /upcoming_events - View all your scheduled upcoming events\n` +
       `• /connect_google - Connect your Google Calendar account\n` +
       `• /all_events - View all your events\n` +

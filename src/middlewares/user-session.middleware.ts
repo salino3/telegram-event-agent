@@ -1,5 +1,5 @@
 import { Context, NextFunction } from "grammy";
-import { userSessions } from "../session/store.js";
+import { aiChatSessions, userSessions } from "../session/store.js";
 
 /**
  * Middleware that automatically wipes any active in-memory session
@@ -9,11 +9,12 @@ export async function clearSessionOnCommand(ctx: Context, next: NextFunction) {
   const telegramId = ctx.from?.id;
   const messageText = ctx.message?.text;
 
-  // Check if there is a valid user ID and if the message is a command
+  // Wipe states if user issues ANY command (e.g. /start, /list_events, etc.) except /ai itself
   if (telegramId && messageText && messageText.startsWith("/")) {
-    if (userSessions.has(telegramId)) {
-      userSessions.delete(telegramId); //
+    if (!messageText.startsWith("/ai")) {
+      aiChatSessions.delete(telegramId);
     }
+    userSessions.delete(telegramId);
   }
 
   await next();
