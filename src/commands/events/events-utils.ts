@@ -340,10 +340,14 @@ export async function sendUpdatedEventCard(
       `${linkLine}` +
       `${documentLine}`;
 
+    const shareUrl = `https://t.me/${ctx.me.username}?start=reg_${eventId}`;
+
     // Action keyboard assembly
     const actionKeyboard = new InlineKeyboard()
       .text("✏️ Edit", `edit_event_${eventId}`)
-      .text("🗑️ Delete", `delete_event_${eventId}`);
+      .text("🗑️ Delete", `delete_event_${eventId}`)
+      .row()
+      .url("➦ Share Event Link", shareUrl);
 
     if (evt.document_id || evt.video_id || evt.link_id) {
       actionKeyboard.row();
