@@ -268,30 +268,40 @@ export async function sendUpdatedEventCard(
   headerPrefix: string = "",
 ) {
   try {
-    // Fetch event details ONLY if the event belongs to this user (telegramId)
+    // 1. Fetch event details if the user is the creator OR a participant
     const evtRes = await query(
       `SELECT 
-         e.id, 
-         e.title, 
-         e.description, 
-         e.location, 
-         e.priority, 
-         e.start_time, 
-         e.end_time,
-         ga.email,
-         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
-         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id,
-         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'video' LIMIT 1) AS video_id,
-         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'link' LIMIT 1) AS link_id
-       FROM events e
-       JOIN accounts acc ON e.creator_id = acc.id
-       LEFT JOIN google_accounts ga 
-         ON ga.id = COALESCE(
-           e.google_account_id, 
-           (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
-         )
-       WHERE e.id = $1 AND acc.telegram_id = $2`,
-      [eventId, telegramId],
+     e.id, 
+     e.title, 
+     e.description, 
+     e.location, 
+     e.priority, 
+     e.start_time, 
+     e.end_time,
+     e.creator_id,
+     creator_acc.telegram_id AS creator_telegram_id,
+     ga.email,
+     (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
+     (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id,
+     (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'video' LIMIT 1) AS video_id,
+     (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'link' LIMIT 1) AS link_id
+   FROM events e
+   JOIN accounts creator_acc ON e.creator_id = creator_acc.id
+   LEFT JOIN google_accounts ga 
+     ON ga.id = COALESCE(
+       e.google_account_id, 
+       (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+     )
+   WHERE e.id = $1 
+     AND (
+       creator_acc.telegram_id = $2 
+       OR EXISTS (
+         SELECT 1 FROM event_participants ep 
+         JOIN accounts acc ON ep.account_id = acc.id 
+         WHERE ep.event_id = e.id AND acc.telegram_id = $2
+       )
+     )`,
+      [eventId, String(telegramId)],
     );
 
     if (evtRes.rows.length === 0) {
@@ -316,7 +326,6 @@ export async function sendUpdatedEventCard(
     }</code></b>\n`;
 
     // Attachment indicators in caption
-
     const videoLine: string = evt.video_id
       ? `\n🎥 <b>Video:</b> <i>Attached</i>`
       : "";
@@ -340,21 +349,24 @@ export async function sendUpdatedEventCard(
       `${linkLine}` +
       `${documentLine}`;
 
-    const shareUrl = `https://t.me/${ctx.me.username}?start=reg_${eventId}`;
-
     // Action keyboard assembly
-    const actionKeyboard = new InlineKeyboard()
-      .text("✏️ Edit", `edit_event_${eventId}`)
-      .text("🗑️ Delete", `delete_event_${eventId}`)
-      .row()
-      .url("➦ Share Event Link", shareUrl);
+    const isCreator = Number(evt.creator_telegram_id) === Number(telegramId);
 
+    const actionKeyboard = new InlineKeyboard();
+
+    if (isCreator) {
+      // Creator gets Edit, Delete button
+      actionKeyboard
+        .text("✏️ Edit", `edit_event_${eventId}`)
+        .text("🗑️ Delete", `delete_event_${eventId}`);
+    }
+
+    // Attachment buttons can still be shown to everyone who can view the card
     if (evt.document_id || evt.video_id || evt.link_id) {
       actionKeyboard.row();
       if (evt.link_id && isValidUrl(evt.link_id)) {
         actionKeyboard.url("🔗 Open Link", evt.link_id);
       } else if (evt.link_id) {
-        // Optional fallback callback if link format is invalid for direct url button
         actionKeyboard.text("🔗 Link", `redirect_link_${eventId}`);
       }
       if (evt.video_id) {
@@ -363,6 +375,13 @@ export async function sendUpdatedEventCard(
       if (evt.document_id) {
         actionKeyboard.text("📄 Download Document", `download_doc_${eventId}`);
       }
+    }
+
+    if (ctx.me) {
+      const eventDeepLink = `https://t.me/${ctx.me.username}?start=reg_${eventId}`;
+      const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(eventDeepLink)}&text=${encodeURIComponent("📌 Join this event!")}`;
+
+      actionKeyboard.row().url("➦ Share Event Link", shareUrl);
     }
 
     const photoToUpload: string = evt.photo_id || DEFAULT_EVENT_IMAGE;
