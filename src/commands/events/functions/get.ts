@@ -77,13 +77,14 @@ export async function upcomingEventsCQB(ctx: CommandContext<Context>) {
 
   try {
     const result = await query(
-      `SELECT e.id, e.title, e.priority, e.start_time 
-         FROM events e
-         JOIN accounts acc ON e.creator_id = acc.id
-         WHERE acc.telegram_id = $1 
-           AND acc.is_active = TRUE
-           AND COALESCE(e.end_time::timestamptz, e.start_time::timestamptz + INTERVAL '3 hours') >= NOW()
-         ORDER BY e.start_time::timestamptz ASC`,
+      `SELECT DISTINCT e.id, e.title, e.priority, e.start_time 
+       FROM events e
+       LEFT JOIN accounts creator_acc ON e.creator_id = creator_acc.id
+       LEFT JOIN event_participants ep ON ep.event_id = e.id
+       LEFT JOIN accounts participant_acc ON ep.account_id = participant_acc.id
+       WHERE (creator_acc.telegram_id = $1 OR participant_acc.telegram_id = $1)
+         AND COALESCE(e.end_time::timestamptz, e.start_time::timestamptz + INTERVAL '3 hours') >= NOW()
+       ORDER BY e.start_time::timestamptz ASC`,
       [String(telegramId)],
     );
 
