@@ -15,11 +15,17 @@ export async function allEventCQB(ctx: CommandContext<Context>) {
 
   try {
     const result = await query(
-      `SELECT e.id, e.title, e.priority, e.start_time
+      `SELECT DISTINCT e.id, e.title, e.priority, e.start_time 
        FROM events e
-       JOIN accounts acc ON e.creator_id = acc.id
-       WHERE acc.telegram_id = $1 AND acc.is_active = TRUE
-       ORDER BY e.start_time::timestamptz ASC`,
+       LEFT JOIN accounts creator_acc ON e.creator_id = creator_acc.id
+       LEFT JOIN event_participants ep ON ep.event_id = e.id
+       LEFT JOIN accounts participant_acc ON ep.account_id = participant_acc.id
+       WHERE (
+         (creator_acc.telegram_id = $1 AND creator_acc.is_active = TRUE)
+         OR 
+         (participant_acc.telegram_id = $1 AND participant_acc.is_active = TRUE)
+       )
+       ORDER BY e.start_time DESC`,
       [String(telegramId)],
     );
 
@@ -47,10 +53,10 @@ export async function allEventCQB(ctx: CommandContext<Context>) {
 
       message += `${itemNum}. ${emoji} <b>${escapeHtml(evt.title)}</b>\n   🗓️ ${formattedDate}\n\n`;
 
-      // Add delete button for this item to the keyboard grid
-      keyboard.text(`🗑️ ${itemNum}`, `delete_event_${evt.id}`);
+      // Add pushpin button to view the event card
+      keyboard.text(`📌 #${itemNum}`, `select_event_${evt.id}`);
 
-      // Break into a new row every 4 buttons so it fits cleanly on mobile screens
+      // Break into a new row every 4 buttons
       if (itemNum % 4 === 0) {
         keyboard.row();
       }
@@ -78,13 +84,17 @@ export async function upcomingEventsCQB(ctx: CommandContext<Context>) {
   try {
     const result = await query(
       `SELECT DISTINCT e.id, e.title, e.priority, e.start_time 
-       FROM events e
-       LEFT JOIN accounts creator_acc ON e.creator_id = creator_acc.id
-       LEFT JOIN event_participants ep ON ep.event_id = e.id
-       LEFT JOIN accounts participant_acc ON ep.account_id = participant_acc.id
-       WHERE (creator_acc.telegram_id = $1 OR participant_acc.telegram_id = $1)
-         AND COALESCE(e.end_time::timestamptz, e.start_time::timestamptz + INTERVAL '3 hours') >= NOW()
-       ORDER BY e.start_time::timestamptz ASC`,
+         FROM events e
+         LEFT JOIN accounts creator_acc ON e.creator_id = creator_acc.id
+         LEFT JOIN event_participants ep ON ep.event_id = e.id
+         LEFT JOIN accounts participant_acc ON ep.account_id = participant_acc.id
+         WHERE (
+           (creator_acc.telegram_id = $1 AND creator_acc.is_active = TRUE)
+           OR 
+           (participant_acc.telegram_id = $1 AND participant_acc.is_active = TRUE)
+         )
+           AND COALESCE(e.end_time::timestamptz, e.start_time::timestamptz + INTERVAL '3 hours') >= NOW()
+         ORDER BY e.start_time::timestamptz ASC`,
       [String(telegramId)],
     );
 

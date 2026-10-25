@@ -26,6 +26,8 @@ export type EditingFieldType =
   | "start_time"
   | MultimediaFieldType;
 
+export type EventParticipantsRoleType = "participant" | "admin";
+
 export interface UserSessionProps {
   step: WizardStep;
   editingEventId?: number;
@@ -57,6 +59,7 @@ export interface EventCardRow {
   video_id: string | null;
   link_id: string | null;
   creator_telegram_id: string | number;
+  user_role?: EventParticipantsRoleType;
 }
 
 export type TextContextType = Filter<Context, "message:text">;
