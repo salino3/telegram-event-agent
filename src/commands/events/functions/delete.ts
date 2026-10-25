@@ -33,59 +33,116 @@ export async function cancelEventProcessCBQ(ctx: CommandContext<Context>) {
 }
 
 /**
- * Callback Query: Delete Event safely across multiple devices
+ * Callback Query: Safe Event Deletion or Leaving Logic (Atomic Single Query)
  */
 export async function deleteEventCQB(ctx: CallbackQueryContext<Context>) {
   const eventId = parseInt(ctx.match[1], 10);
-  const telegramId = ctx.from.id;
+  const telegramId = ctx.from?.id;
+
+  if (!telegramId || isNaN(eventId)) {
+    await ctx.answerCallbackQuery({ text: "Invalid request." });
+    return;
+  }
 
   try {
-    // Single Atomic SQL Sentence: Deletes attachments & event, returning Google Sync details
-    const deleteRes = await query(
-      `WITH deleted_event AS (
-        DELETE FROM events
-        WHERE id = $1 
-          AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $2)
-        RETURNING google_event_id, google_account_id
-      )
-      SELECT 
-        de.google_event_id, 
-        ga.access_token, 
-        ga.refresh_token, 
-        ga.email
-      FROM deleted_event de
-      LEFT JOIN google_accounts ga 
-        ON de.google_account_id = ga.id`,
+    // Single Atomic SQL Sentence:
+    // 1. Identifies user account & role.
+    // 2. Counts other admins.
+    // 3. If no other admins remain AND user is creator/admin -> Deletes event globally (returning Google sync info).
+    // 4. Otherwise -> Deletes user from event_participants.
+    const res = await query(
+      `WITH user_info AS (
+         SELECT a.id AS account_id, ep.role AS participant_role, e.creator_id, e.google_event_id, e.google_account_id
+         FROM events e
+         JOIN accounts a ON a.telegram_id = $2
+         LEFT JOIN event_participants ep ON ep.event_id = e.id AND ep.account_id = a.id
+         WHERE e.id = $1
+       ),
+       other_admins AS (
+         SELECT COUNT(*) AS count 
+         FROM event_participants 
+         WHERE event_id = $1 AND role = 'admin' AND account_id <> (SELECT account_id FROM user_info)
+       ),
+       action_decision AS (
+         SELECT 
+           ui.account_id,
+           ui.participant_role,
+           ui.creator_id,
+           oa.count AS other_admins_count,
+           (ui.creator_id = ui.account_id OR ui.participant_role = 'admin') AS is_admin
+         FROM user_info ui, other_admins oa
+       ),
+       delete_action AS (
+         -- Case A: Global Deletion (User is admin/creator AND 0 other admins remain)
+         DELETE FROM events e
+         USING action_decision ad
+         WHERE e.id = $1 
+           AND ad.is_admin = TRUE 
+           AND ad.other_admins_count = 0
+         RETURNING e.google_event_id, e.google_account_id, 'global_deleted' AS action_type
+       ),
+       leave_action AS (
+         -- Case B: Leave/Remove from list only (User is regular participant OR other admins still exist)
+         DELETE FROM event_participants ep
+         USING action_decision ad
+         WHERE ep.event_id = $1 
+           AND ep.account_id = ad.account_id 
+           AND (ad.is_admin = FALSE OR ad.other_admins_count > 0)
+         RETURNING null::text AS google_event_id, null::int AS google_account_id, 'left_event' AS action_type
+       ),
+       combined_action AS (
+         SELECT * FROM delete_action
+         UNION ALL
+         SELECT * FROM leave_action
+       )
+       SELECT 
+         ca.action_type,
+         ca.google_event_id,
+         ga.access_token,
+         ga.refresh_token,
+         ga.email
+       FROM combined_action ca
+       LEFT JOIN google_accounts ga ON ca.google_account_id = ga.id`,
       [eventId, String(telegramId)],
     );
 
-    // If no rows returned, either deleted on another device or unauthorized
-    if (deleteRes.rows.length === 0) {
+    if (res.rows.length === 0) {
       await ctx.answerCallbackQuery({
-        text: "Event not found or already deleted.",
+        text: "Event not found or unauthorized.",
       });
       return;
     }
 
-    const { google_event_id, access_token, refresh_token, email } =
-      deleteRes.rows[0];
+    const { action_type, google_event_id, access_token, refresh_token, email } =
+      res.rows[0];
 
-    // Delete from Google Calendar if synced
-    if (google_event_id && access_token) {
-      await deleteGoogleCalendarEventDirect({
-        googleEventId: google_event_id,
-        accessToken: access_token,
-        refreshToken: refresh_token,
-        email: email,
+    if (action_type === "global_deleted") {
+      // Delete from Google Calendar if synced globally
+      if (google_event_id && access_token) {
+        await deleteGoogleCalendarEventDirect({
+          googleEventId: google_event_id,
+          accessToken: access_token,
+          refreshToken: refresh_token,
+          email: email,
+        });
+      }
+      await ctx.answerCallbackQuery({
+        text: "🗑️ Event deleted successfully for everyone!",
       });
+      await ctx.reply(
+        "🗑️ Event has been completely deleted from the database and Google Calendar because no other administrators remained.",
+      );
+    } else {
+      await ctx.answerCallbackQuery({ text: "🚪 You have left the event." });
+      await ctx.reply(
+        "🚪 You have successfully left the event and removed it from your list.",
+      );
     }
-
-    await ctx.answerCallbackQuery({ text: "🗑️ Event deleted successfully!" });
-    await ctx.reply(
-      "🗑️ Event has been removed from your calendar and database.",
-    );
   } catch (error) {
-    console.error("Error deleting event:", error);
-    await ctx.answerCallbackQuery({ text: "Failed to delete event." });
+    console.error("Error deleting/leaving event:", error);
+    await ctx.answerCallbackQuery({ text: "Failed to process event removal." });
+    await ctx.reply(
+      "❌ An error occurred while trying to process your request.",
+    );
   }
 }
