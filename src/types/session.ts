@@ -59,7 +59,8 @@ export interface EventCardRow {
   video_id: string | null;
   link_id: string | null;
   creator_telegram_id: string | number;
-  user_role?: EventParticipantsRoleType;
+  user_role: EventParticipantsRoleType;
+  participant_account_id: number | null;
 }
 
 export type TextContextType = Filter<Context, "message:text">;

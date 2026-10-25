@@ -40,16 +40,18 @@ export async function deleteEventCQB(ctx: CallbackQueryContext<Context>) {
   const telegramId = ctx.from?.id;
 
   if (!telegramId || isNaN(eventId)) {
-    await ctx.answerCallbackQuery({ text: "Invalid request." });
+    await ctx.answerCallbackQuery({ text: "Invalid request." }).catch(() => {});
     return;
   }
 
   try {
-    // Single Atomic SQL Sentence:
-    // 1. Identifies user account & role.
-    // 2. Counts other admins.
-    // 3. If no other admins remain AND user is creator/admin -> Deletes event globally (returning Google sync info).
-    // 4. Otherwise -> Deletes user from event_participants.
+    // 1. Acknowledge callback query immediately to stop the Telegram loading spinner
+    await ctx.answerCallbackQuery({ text: "Processing..." }).catch(() => {});
+
+    // 2. Single Atomic SQL Sentence:
+    // - Identifies user account & role
+    // - Counts other admins
+    // - Deletes globally or leaves event depending on role
     const res = await query(
       `WITH user_info AS (
          SELECT a.id AS account_id, ep.role AS participant_role, e.creator_id, e.google_event_id, e.google_account_id
@@ -107,9 +109,7 @@ export async function deleteEventCQB(ctx: CallbackQueryContext<Context>) {
     );
 
     if (res.rows.length === 0) {
-      await ctx.answerCallbackQuery({
-        text: "Event not found or unauthorized.",
-      });
+      await ctx.reply("❌ Event not found or unauthorized.");
       return;
     }
 
@@ -119,30 +119,98 @@ export async function deleteEventCQB(ctx: CallbackQueryContext<Context>) {
     if (action_type === "global_deleted") {
       // Delete from Google Calendar if synced globally
       if (google_event_id && access_token) {
-        await deleteGoogleCalendarEventDirect({
-          googleEventId: google_event_id,
-          accessToken: access_token,
-          refreshToken: refresh_token,
-          email: email,
-        });
+        try {
+          await deleteGoogleCalendarEventDirect({
+            googleEventId: google_event_id,
+            accessToken: access_token,
+            refreshToken: refresh_token,
+            email: email,
+          });
+        } catch (calErr) {
+          console.error("Google Calendar deletion error:", calErr);
+        }
       }
-      await ctx.answerCallbackQuery({
-        text: "🗑️ Event deleted successfully for everyone!",
-      });
+
+      // Clean up the card message and reply
+      try {
+        await ctx.deleteMessage();
+      } catch (e) {}
+
       await ctx.reply(
         "🗑️ Event has been completely deleted from the database and Google Calendar because no other administrators remained.",
       );
     } else {
-      await ctx.answerCallbackQuery({ text: "🚪 You have left the event." });
+      try {
+        await ctx.deleteMessage();
+      } catch (e) {}
+
       await ctx.reply(
         "🚪 You have successfully left the event and removed it from your list.",
       );
     }
   } catch (error) {
     console.error("Error deleting/leaving event:", error);
-    await ctx.answerCallbackQuery({ text: "Failed to process event removal." });
     await ctx.reply(
       "❌ An error occurred while trying to process your request.",
     );
+  }
+}
+
+/**
+ * Callback Query: Participant delete Event safely across multiple devices
+ */
+export async function participantLeaveEvent(
+  ctx: CallbackQueryContext<Context>,
+) {
+  const eventId = parseInt(ctx.match[1], 10);
+  const telegramId = ctx.from?.id;
+
+  if (!telegramId || isNaN(eventId)) {
+    await ctx.answerCallbackQuery({ text: "Invalid request." });
+    return;
+  }
+
+  try {
+    // Single Atomic SQL Query: Finds user account and deletes them from event_participants in one go
+    const deleteRes = await query(
+      `WITH user_account AS (
+         SELECT id FROM accounts WHERE telegram_id = $2
+       ),
+       removed_participant AS (
+         DELETE FROM event_participants ep
+         USING user_account ua
+         WHERE ep.event_id = $1 AND ep.account_id = ua.id
+         RETURNING ep.event_id
+       )
+       SELECT rp.event_id FROM removed_participant rp`,
+      [eventId, String(telegramId)],
+    );
+
+    // If no rows were returned, the user wasn't registered as a participant for this event
+    if (deleteRes.rows.length === 0) {
+      await ctx.answerCallbackQuery({
+        text: "⚠️ You are not registered as a participant for this event.",
+      });
+      return;
+    }
+
+    // 2. Acknowledge button click
+    await ctx.answerCallbackQuery({ text: "🚪 You have left the event." });
+
+    // 3. Clean up the chat: Delete the event card message so it doesn't stay interactive
+    try {
+      await ctx.deleteMessage();
+    } catch (delErr) {
+      // Ignore if message couldn't be deleted (e.g., too old)
+    }
+
+    // 4. Send clear confirmation text
+    await ctx.reply(
+      "🚪 You have successfully left the event and removed it from your list.",
+    );
+  } catch (error) {
+    console.error("Error leaving event:", error);
+    await ctx.answerCallbackQuery({ text: "Failed to leave event." });
+    await ctx.reply("❌ An error occurred while trying to leave the event.");
   }
 }
