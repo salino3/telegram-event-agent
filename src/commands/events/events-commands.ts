@@ -170,29 +170,42 @@ async function handleTextMessage(ctx: TextContextType, next: NextFunction) {
 
       // 3. Persist Event to Database
       const eventInsertRes = await query(
-        `INSERT INTO events (creator_id, title, description, location,
-       priority, start_time, end_time, google_event_id, google_account_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-       RETURNING id`,
+        `WITH new_event AS (
+           INSERT INTO events (creator_id, title, description, location,
+                  priority, start_time, end_time, google_event_id, google_account_id)
+           SELECT a.id, $2, $3, $4, $5, $6, $7, $8, $9
+           FROM accounts a
+           WHERE a.telegram_id = $1
+           RETURNING id, creator_id
+         )
+         INSERT INTO event_participants (event_id, account_id, google_account_id, role, status)
+         SELECT id, creator_id, $9, 'admin', 'accepted'
+         FROM new_event
+         RETURNING event_id AS id;`,
         [
-          creatorId,
-          session.title,
-          session.description || null,
-          session.location || null,
-          priorityValue,
-          startTime.toISOString(),
-          endTime.toISOString(),
-          googleEventId || null,
-          googleAccountId || null,
+          String(telegramId), // $1
+          session.title, // $2
+          session.description || null, // $3
+          session.location || null, // $4
+          priorityValue, // $5
+          startTime.toISOString(), // $6
+          endTime.toISOString(), // $7
+          googleEventId || null, // $8
+          googleAccountId || null, // $9
         ],
       );
+
+      if (eventInsertRes.rows.length === 0) {
+        await ctx.reply("❌ Account not found. Please run /start first.");
+        return;
+      }
 
       const createdEventId = eventInsertRes.rows[0].id;
 
       if (session.photoId && createdEventId) {
         await query(
           `INSERT INTO event_attachments (event_id, uploaded_by, file_type, content)
-         VALUES ($1, $2, 'photo', $3)`,
+           VALUES ($1, $2, 'photo', $3)`,
           [createdEventId, creatorId, session.photoId],
         );
       }
@@ -219,7 +232,7 @@ async function handleTextMessage(ctx: TextContextType, next: NextFunction) {
           `🚨 <b>Priority:</b> ${priorityFormatted}\n` +
           `📆 <b>Start Time:</b> ${startTime.toLocaleString()}\n` +
           `⏳ <b>Duration:</b> ${durationInput} min\n\n` +
-          `${syncStatusMessage}${calendarLinkText}`,
+          `${syncStatusMessage}${calendarLinkText},`,
         {
           parse_mode: "HTML",
           link_preview_options: { is_disabled: true },

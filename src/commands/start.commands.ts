@@ -80,12 +80,12 @@ startComposer.command("start", async (ctx: CommandContext<Context>) => {
       const googleEmail =
         googleAccRes.rows.length > 0 ? googleAccRes.rows[0].email : null;
 
-      // Register participant in DB (Works whether Google account exists or is null)
+      // Register participant in DB (Works whether Google account exists or is null, and ON CONFLICT to prevent duplicate crash)
       await query(
-        `INSERT INTO event_participants (event_id, account_id, google_account_id, status)
-         VALUES ($1, $2, $3, 'accepted')
-         ON CONFLICT (event_id, account_id) 
-         DO UPDATE SET google_account_id = $3, status = 'accepted'`,
+        `INSERT INTO event_participants (event_id, account_id, google_account_id, role, status)
+   VALUES ($1, $2, $3, 'participant', 'accepted')
+   ON CONFLICT (event_id, account_id) 
+   DO UPDATE SET google_account_id = $3, status = 'accepted'`,
         [eventId, accountId, googleAccountId],
       );
 

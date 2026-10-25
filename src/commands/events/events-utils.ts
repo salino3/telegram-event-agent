@@ -271,36 +271,35 @@ export async function sendUpdatedEventCard(
     // 1. Fetch event details if the user is the creator OR a participant
     const evtRes = await query(
       `SELECT 
-     e.id, 
-     e.title, 
-     e.description, 
-     e.location, 
-     e.priority, 
-     e.start_time, 
-     e.end_time,
-     e.creator_id,
-     creator_acc.telegram_id AS creator_telegram_id,
-     ga.email,
-     (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
-     (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id,
-     (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'video' LIMIT 1) AS video_id,
-     (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'link' LIMIT 1) AS link_id
-   FROM events e
-   JOIN accounts creator_acc ON e.creator_id = creator_acc.id
-   LEFT JOIN google_accounts ga 
-     ON ga.id = COALESCE(
-       e.google_account_id, 
-       (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
-     )
-   WHERE e.id = $1 
-     AND (
-       creator_acc.telegram_id = $2 
-       OR EXISTS (
-         SELECT 1 FROM event_participants ep 
-         JOIN accounts acc ON ep.account_id = acc.id 
-         WHERE ep.event_id = e.id AND acc.telegram_id = $2
-       )
-     )`,
+         e.id, 
+         e.title, 
+         e.description, 
+         e.location, 
+         e.priority, 
+         e.start_time, 
+         e.end_time,
+         e.creator_id,
+         creator_acc.telegram_id AS creator_telegram_id,
+         ga.email,
+         ep.role AS user_role,
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id,
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'video' LIMIT 1) AS video_id,
+         (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'link' LIMIT 1) AS link_id
+       FROM events e
+       JOIN accounts creator_acc ON e.creator_id = creator_acc.id
+       LEFT JOIN google_accounts ga 
+         ON ga.id = COALESCE(
+           e.google_account_id, 
+           (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
+         )
+       LEFT JOIN accounts viewer_acc ON viewer_acc.telegram_id = $2
+       LEFT JOIN event_participants ep ON ep.event_id = e.id AND ep.account_id = viewer_acc.id
+       WHERE e.id = $1 
+         AND (
+           creator_acc.telegram_id = $2 
+           OR ep.account_id IS NOT NULL
+         )`,
       [eventId, String(telegramId)],
     );
 
@@ -351,11 +350,12 @@ export async function sendUpdatedEventCard(
 
     // Action keyboard assembly
     const isCreator = Number(evt.creator_telegram_id) === Number(telegramId);
+    const isAdmin = isCreator || evt.user_role === "admin";
 
     const actionKeyboard = new InlineKeyboard();
 
-    if (isCreator) {
-      // Creator gets Edit, Delete button
+    // Edit & Delete buttons (Shown only to Creators and Admins)
+    if (isAdmin) {
       actionKeyboard
         .text("✏️ Edit", `edit_event_${eventId}`)
         .text("🗑️ Delete", `delete_event_${eventId}`);
@@ -363,7 +363,6 @@ export async function sendUpdatedEventCard(
 
     // Attachment buttons can still be shown to everyone who can view the card
     if (evt.document_id || evt.video_id || evt.link_id) {
-      actionKeyboard.row();
       if (evt.link_id && isValidUrl(evt.link_id)) {
         actionKeyboard.url("🔗 Open Link", evt.link_id);
       } else if (evt.link_id) {
@@ -375,13 +374,15 @@ export async function sendUpdatedEventCard(
       if (evt.document_id) {
         actionKeyboard.text("📄 Download Document", `download_doc_${eventId}`);
       }
+      actionKeyboard.row();
     }
 
+    // 3. Share Event Link at the bottom (Shown for everyone who can view the card)
     if (ctx.me) {
       const eventDeepLink = `https://t.me/${ctx.me.username}?start=reg_${eventId}`;
       const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(eventDeepLink)}&text=${encodeURIComponent("📌 Join this event!")}`;
 
-      actionKeyboard.row().url("➦ Share Event Link", shareUrl);
+      actionKeyboard.url("➦ Share Event Link", shareUrl);
     }
 
     const photoToUpload: string = evt.photo_id || DEFAULT_EVENT_IMAGE;
