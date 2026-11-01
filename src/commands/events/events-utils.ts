@@ -162,6 +162,20 @@ export async function saveEventUpdate(
   try {
     let dbRes;
 
+    // Helper condition snippet to check if the user is either the creator OR an admin participant
+    const adminCheckClause = `
+      WHERE id = $3 AND (
+        creator_id = (SELECT id FROM accounts WHERE telegram_id = $4)
+        OR EXISTS (
+          SELECT 1 FROM event_participants ep 
+          JOIN accounts a ON a.id = ep.account_id 
+          WHERE ep.event_id = events.id 
+            AND a.telegram_id = $4 
+            AND ep.role = 'admin'
+        )
+      )
+    `;
+
     if (field === "start_time") {
       // Fetch current start and end times to maintain the event's original duration
       const currentEvtRes = await query(
@@ -187,20 +201,20 @@ export async function saveEventUpdate(
         }
       }
 
-      // Update both start_time and end_time together
+      // Update both start_time and end_time together with Admin check
       dbRes = await query(
         `UPDATE events 
          SET start_time = $1, end_time = $2, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $3 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $4)
+         ${adminCheckClause}
          RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
         [value, newEndTime, eventId, String(telegramId)],
       );
     } else {
-      // Standard update for single fields (title, description, location, priority)
+      // Standard update for single fields with Admin check
       dbRes = await query(
         `UPDATE events 
          SET ${field} = $1, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $3)
+         ${adminCheckClause}
          RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
         [value, eventId, String(telegramId)],
       );
@@ -209,7 +223,9 @@ export async function saveEventUpdate(
     const updatedEvt = dbRes.rows[0];
 
     if (!updatedEvt) {
-      await ctx.reply("❌ Event update failed or event not found.");
+      await ctx.reply(
+        "❌ Event update failed or event not found, or you lack admin permissions.",
+      );
       return;
     }
 
@@ -217,7 +233,7 @@ export async function saveEventUpdate(
     if (updatedEvt.google_event_id) {
       await updateGoogleCalendarEvent({
         telegramId,
-        eventId, // Pass database eventId so tokens for the correct owning account are queried
+        eventId,
         googleEventId: updatedEvt.google_event_id,
         title: updatedEvt.title,
         description: updatedEvt.description,
