@@ -372,6 +372,13 @@ export async function sendUpdatedEventCard(
     const isParticipant = evt.participant_account_id !== null && !isAdmin;
 
     const actionKeyboard = new InlineKeyboard();
+    const isLinked = Boolean(evt.email);
+
+    if (!isLinked) {
+      actionKeyboard
+        .text("🔄 Sync event to Google calendar", `sync_event_${eventId}`)
+        .row();
+    }
 
     // 1. Edit & Delete FIRST (Shown ONLY to Creators and Admins)
     if (isAdmin) {
