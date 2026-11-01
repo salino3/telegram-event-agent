@@ -53,10 +53,9 @@ export async function allEventCQB(ctx: CommandContext<Context>) {
 
       message += `${itemNum}. ${emoji} <b>${escapeHtml(evt.title)}</b>\n   🗓️ ${formattedDate}\n\n`;
 
-      // Add pushpin button to view the event card
-      keyboard.text(`📌 #${itemNum}`, `select_event_${evt.id}`);
+      // Add delete/manage button for this item
+      keyboard.text(`🗑️ ${itemNum}`, `delete_event_${evt.id}`);
 
-      // Break into a new row every 4 buttons
       if (itemNum % 4 === 0) {
         keyboard.row();
       }
