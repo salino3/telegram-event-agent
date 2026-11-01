@@ -5,7 +5,7 @@ import {
   deleteEventCQB,
   participantLeaveEvent,
 } from "./functions/delete.js";
-import { newEventCQB } from "./functions/post.js";
+import { newEventCQB, syncEventCBQ } from "./functions/post.js";
 import { allEventCQB, upcomingEventsCQB } from "./functions/get.js";
 import {
   colorEventPriorityCQB,
@@ -51,6 +51,11 @@ export const eventCallbackRoutes: CallbackRoute[] = [
     handler: aiCQB,
   },
   // Callbacks
+  {
+    type: "callback",
+    trigger: /^sync_event_(\d+)$/,
+    handler: syncEventCBQ,
+  },
   { type: "callback", trigger: "skip_photo", handler: skipPhotoCBQ },
   { type: "callback", trigger: "skip_color", handler: skipColorCBQ },
   { type: "callback", trigger: "skip_field", handler: skipFieldCBQ },

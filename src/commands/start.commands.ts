@@ -91,7 +91,7 @@ startComposer.command("start", async (ctx: CommandContext<Context>) => {
 
       // Tailor the success message based on whether Google is linked
       const calendarStatus = googleEmail
-        ? `📬 <b>Synced to Calendar:</b> ${googleEmail}`
+        ? `📬 <b>Account Synced to Calendar:</b> ${googleEmail}`
         : `⚠️ <i>Saved in chatbot database only. Connect Google anytime with /connect_google to sync future events.</i>`;
 
       await ctx.reply(
