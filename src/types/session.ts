@@ -56,6 +56,7 @@ export interface EventCardRow {
   document_id: string | null;
   video_id: string | null;
   link_id: string | null;
+  creator_telegram_id: string | number;
 }
 
 export type TextContextType = Filter<Context, "message:text">;
