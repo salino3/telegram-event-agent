@@ -162,6 +162,20 @@ export async function saveEventUpdate(
   try {
     let dbRes;
 
+    // Helper condition snippet to check if the user is either the creator OR an admin participant
+    const adminCheckClause = `
+      WHERE id = $3 AND (
+        creator_id = (SELECT id FROM accounts WHERE telegram_id = $4)
+        OR EXISTS (
+          SELECT 1 FROM event_participants ep 
+          JOIN accounts a ON a.id = ep.account_id 
+          WHERE ep.event_id = events.id 
+            AND a.telegram_id = $4 
+            AND ep.role = 'admin'
+        )
+      )
+    `;
+
     if (field === "start_time") {
       // Fetch current start and end times to maintain the event's original duration
       const currentEvtRes = await query(
@@ -187,20 +201,20 @@ export async function saveEventUpdate(
         }
       }
 
-      // Update both start_time and end_time together
+      // Update both start_time and end_time together with Admin check
       dbRes = await query(
         `UPDATE events 
          SET start_time = $1, end_time = $2, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $3 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $4)
+         ${adminCheckClause}
          RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
         [value, newEndTime, eventId, String(telegramId)],
       );
     } else {
-      // Standard update for single fields (title, description, location, priority)
+      // Standard update for single fields with Admin check
       dbRes = await query(
         `UPDATE events 
          SET ${field} = $1, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2 AND creator_id = (SELECT id FROM accounts WHERE telegram_id = $3)
+         ${adminCheckClause}
          RETURNING google_event_id, title, description, location, priority, start_time, end_time`,
         [value, eventId, String(telegramId)],
       );
@@ -209,7 +223,9 @@ export async function saveEventUpdate(
     const updatedEvt = dbRes.rows[0];
 
     if (!updatedEvt) {
-      await ctx.reply("❌ Event update failed or event not found.");
+      await ctx.reply(
+        "❌ Event update failed or event not found, or you lack admin permissions.",
+      );
       return;
     }
 
@@ -217,7 +233,7 @@ export async function saveEventUpdate(
     if (updatedEvt.google_event_id) {
       await updateGoogleCalendarEvent({
         telegramId,
-        eventId, // Pass database eventId so tokens for the correct owning account are queried
+        eventId,
         googleEventId: updatedEvt.google_event_id,
         title: updatedEvt.title,
         description: updatedEvt.description,
@@ -281,6 +297,8 @@ export async function sendUpdatedEventCard(
      e.creator_id,
      creator_acc.telegram_id AS creator_telegram_id,
      ga.email,
+     ep.role AS user_role,
+     ep.account_id AS participant_account_id,
      (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'photo' LIMIT 1) AS photo_id,
      (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'document' LIMIT 1) AS document_id,
      (SELECT content FROM event_attachments ea WHERE ea.event_id = e.id AND ea.file_type = 'video' LIMIT 1) AS video_id,
@@ -292,14 +310,12 @@ export async function sendUpdatedEventCard(
        e.google_account_id, 
        (SELECT id FROM google_accounts WHERE account_id = e.creator_id AND is_default = TRUE LIMIT 1)
      )
+   LEFT JOIN accounts viewer_acc ON viewer_acc.telegram_id = $2
+   LEFT JOIN event_participants ep ON ep.event_id = e.id AND ep.account_id = viewer_acc.id
    WHERE e.id = $1 
      AND (
        creator_acc.telegram_id = $2 
-       OR EXISTS (
-         SELECT 1 FROM event_participants ep 
-         JOIN accounts acc ON ep.account_id = acc.id 
-         WHERE ep.event_id = e.id AND acc.telegram_id = $2
-       )
+       OR ep.account_id IS NOT NULL
      )`,
       [eventId, String(telegramId)],
     );
@@ -350,18 +366,29 @@ export async function sendUpdatedEventCard(
       `${documentLine}`;
 
     // Action keyboard assembly
+    // Action keyboard assembly
     const isCreator = Number(evt.creator_telegram_id) === Number(telegramId);
+    const isAdmin = isCreator || evt.user_role === "admin"; // Checks if Creator OR Admin
+    const isParticipant = evt.participant_account_id !== null && !isAdmin;
 
     const actionKeyboard = new InlineKeyboard();
+    const isLinked = Boolean(evt.email);
 
-    if (isCreator) {
-      // Creator gets Edit, Delete button
+    if (!isLinked) {
       actionKeyboard
-        .text("✏️ Edit", `edit_event_${eventId}`)
-        .text("🗑️ Delete", `delete_event_${eventId}`);
+        .text("🔄 Sync event to Google calendar", `sync_event_${eventId}`)
+        .row();
     }
 
-    // Attachment buttons can still be shown to everyone who can view the card
+    // 1. Edit & Delete FIRST (Shown ONLY to Creators and Admins)
+    if (isAdmin) {
+      actionKeyboard
+        .text("✏️ Edit", `edit_event_${eventId}`)
+        .text("🗑️ Delete", `delete_event_${eventId}`)
+        .row();
+    }
+
+    // 2. Attachment buttons in the middle (Shown to everyone viewing the card)
     if (evt.document_id || evt.video_id || evt.link_id) {
       actionKeyboard.row();
       if (evt.link_id && isValidUrl(evt.link_id)) {
@@ -377,11 +404,24 @@ export async function sendUpdatedEventCard(
       }
     }
 
+    // . Bottom Button (Only ONE gets added based on user role):
+    // - Admins/Creators get "Share Event Link"
+    // - Regular Participants get "Leave Event"
+    // - Non-participants get "Register to Event"
     if (ctx.me) {
       const eventDeepLink = `https://t.me/${ctx.me.username}?start=reg_${eventId}`;
-      const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(eventDeepLink)}&text=${encodeURIComponent("📌 Join this event!")}`;
 
-      actionKeyboard.row().url("➦ Share Event Link", shareUrl);
+      if (isAdmin) {
+        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(eventDeepLink)}&text=${encodeURIComponent("📌 Join this event!")}`;
+        actionKeyboard.url("➦ Share Event Link", shareUrl);
+      } else if (isParticipant) {
+        actionKeyboard.text(
+          "❌ Leave Event",
+          `participant_leave_event_${eventId}`,
+        );
+      } else {
+        actionKeyboard.url("✅ Register to Event", eventDeepLink);
+      }
     }
 
     const photoToUpload: string = evt.photo_id || DEFAULT_EVENT_IMAGE;

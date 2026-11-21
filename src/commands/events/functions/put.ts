@@ -62,6 +62,7 @@ export async function editEventCQB(ctx: CallbackQueryContext<Context>) {
     parse_mode: "Markdown",
   });
 }
+
 /**
  * Callback Query: Trigger Edit Wizard (Select Field to Modify)
  */
