@@ -1,7 +1,11 @@
 import { CallbackQueryContext, CommandContext, Context } from "grammy";
 import { skipColorCBQ, skipFieldCBQ, skipPhotoCBQ } from "./functions/skips.js";
-import { cancelEventProcessCBQ, deleteEventCQB } from "./functions/delete.js";
-import { newEventCQB } from "./functions/post.js";
+import {
+  cancelEventProcessCBQ,
+  deleteEventCQB,
+  participantLeaveEvent,
+} from "./functions/delete.js";
+import { newEventCQB, syncEventCBQ } from "./functions/post.js";
 import { allEventCQB, upcomingEventsCQB } from "./functions/get.js";
 import {
   colorEventPriorityCQB,
@@ -47,6 +51,11 @@ export const eventCallbackRoutes: CallbackRoute[] = [
     handler: aiCQB,
   },
   // Callbacks
+  {
+    type: "callback",
+    trigger: /^sync_event_(\d+)$/,
+    handler: syncEventCBQ,
+  },
   { type: "callback", trigger: "skip_photo", handler: skipPhotoCBQ },
   { type: "callback", trigger: "skip_color", handler: skipColorCBQ },
   { type: "callback", trigger: "skip_field", handler: skipFieldCBQ },
@@ -91,10 +100,14 @@ export const eventCallbackRoutes: CallbackRoute[] = [
     trigger: /^color_(\d+)$/,
     handler: colorEventPriorityCQB,
   },
-
   {
     type: "callback",
     trigger: /^delete_event_(\d+)$/,
     handler: deleteEventCQB,
+  },
+  {
+    type: "callback",
+    trigger: /^participant_leave_event_(\d+)$/,
+    handler: participantLeaveEvent,
   },
 ];
